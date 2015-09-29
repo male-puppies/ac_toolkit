@@ -1,12 +1,22 @@
 #ifndef _AUTH_H_
 #define _AUTH_H_
 
-#include <linux/module.h>
-#include <linux/kobject.h>
-#include <linux/kmod.h>
-#include <linux/slab.h>
-
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include "nxjson.h"
+
+#define SIOCSAUTHRULES		0x100	/*set auth rules*/
+#define SIOCSAUTHOPTIONS	0x101	/*set auth options*/
+#define SIOCSUSRSTAT		0x102	/*set usr status*/
+#define SIOCGUSRSTAT		0x103	/*get usr status*/
+#define SIOCSIFINFO			0x104	/*set network interface*/
+
 
 struct ip_range
 {

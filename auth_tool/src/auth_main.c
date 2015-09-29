@@ -157,7 +157,7 @@ static int auth_json_array_map(
 		return 0;
 	}
 
-	array = kzalloc(elem_size * j_array->length, GFP_KERNEL);
+	array = AUTH_NEW_N(elem_size * j_array->length, char);
 	if (array == NULL) 
 	{
 		AUTH_ERROR("%s.length == %d, out of memory.\n", name, j_array->length);
