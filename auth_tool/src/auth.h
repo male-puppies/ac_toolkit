@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <errno.h>
  #include <arpa/inet.h>
+#include <assert.h>
 #include "nxjson.h"
 
 
@@ -62,6 +63,25 @@ struct auth_ip_rule
 	struct ip_range *ip_ranges;
 	uint32_t 	nc_ip_range;
 };
+
+
+struct ioc_auth_ip_rule {
+	char		name[AUTH_RULE_NAME_MAX];
+	uint32_t 	type;
+	uint32_t	enable;
+	uint32_t 	priority;
+	uint32_t 	nc_ip_range;
+	/*struct ip_range *ip_ranges*/
+};
+
+// /*ipv4 range*/
+// struct auth_ip_rule {
+// 	uint8_t 	type;	/*normal, white, black*/
+// 	uint8_t		priority;
+// 	uint8_t 	enable;
+// 	uint32_t	min;	/*min ip*/
+// 	uint32_t 	max;	/*max ip*/
+// };
 
 
 /*interface info*/
@@ -122,4 +142,92 @@ struct auth_global_config {
 #define AUTH_DEBUG(format,...)   do { fprintf(stdout, "%s "format, __func__, ##__VA_ARGS__); } while(0)
 #define AUTH_INFO(format,...)    do { fprintf(stdout, "%s "format, __func__, ##__VA_ARGS__); } while(0)
 #define AUTH_ERROR(format,...)    do { fprintf(stderr, "%s "format, __func__, ##__VA_ARGS__); } while(0)
+
+
+
+//#define IP_RULE_TYPE_NUM	3
+#define IP_RULE_TYPE_STR_LEN 8
+enum IP_RULE_TYPE_E {
+	NORMAL	= 0,
+	WHITE	= 1,
+	BLACK	= 2,
+};
+
+// /*ipv4 range*/
+// struct auth_ip_rule {
+// 	uint8_t 	type;	/*normal, white, black*/
+// 	uint8_t		priority;
+// 	uint8_t 	enable;
+// 	uint32_t	min;	/*min ip*/
+// 	uint32_t 	max;	/*max ip*/
+// };
+
+/*auth options*/
+struct ioc_auth_options {
+	uint32_t	user_check_intval;	/*unit: seconds*/
+	char 		redirect_url[REDIRECT_URL_MAX];	
+	char		redirect_title[REDIRECT_TITLE_MAX];
+};
+
+enum ARG_TYPE_E {
+	AUTH_RULE	= 0,
+	AUTH_OPTION	= 1,
+	USER_GSTAT	= 2,
+	USER_SSTAT	= 3,
+	NET_IF_INFO	= 4,
+	/*add new type here*/
+	INVALID_ARG_TYPE,
+};
+#define ARG_TYPE_NUM  (INVALID_ARG_TYPE + 1)
+#define ARG_TYPE_STR_LEN 16
+
+
+enum USER_STATUS {
+	USER_OFFLINE = 0,
+	USER_ONLINE = 1,
+	/*new status add here*/
+	INVALID_USER_STATUS,
+};
+#define USER_STATUS_NUM (INVALID_USER_STATUS + 1)
+#define USER_STATUS_STR_LEN 16
+
+// struct user_info {
+// 	uint32_t ipv4;
+// 	uint32_t status;
+// 	uint64_t jf;
+// 	unsigned char mac[ETH_ALEN];
+// };
+
+struct user_stat_assist {
+	uint16_t more;		/*more user stat info*/
+	uint16_t nc_element;/*num count of mem space which unit is sizeof(user_info)*/
+	uint16_t nc_user;	/*real num of user*/
+	uint16_t nc_unused; /*more user need to get*/
+	uint64_t tm_stamp;
+	unsigned long addr; /*user_space addr*/
+};
+/*"assit + user_info" kernel copy to user*/
+
+#define NET_IF_TYPE_NUM	3
+#define NET_IF_TYPE_STR_LEN 8
+enum IF_TYPE_E {
+	LAN_E	= 0,
+	WAN_E	= 1,
+	LOOP_E 	= 2,
+};
+
+/*interface info*/
+struct ioc_auth_if_info {
+	uint8_t 		type;
+	unsigned char 	if_name[IF_NAME_MAX];
+};
+
+/*ioctl cmd args*/
+struct auth_ioc_arg {
+	uint8_t		type;		/*element type, just for check*/
+	uint16_t 	num;		/*element count*/
+	uint16_t	data_len;	/*num * sizeof element*/
+	/*element data body*/
+};
+
 #endif

@@ -677,7 +677,6 @@ static void auth_config_dump(struct auth_global_config *config)
 	if (config->get_all_user) {
 		AUTH_INFO("GetAllUser:%d.\n", config->get_all_user);
 	}
-
 	AUTH_INFO("------------------------------------------\n");
 }
 
@@ -785,10 +784,492 @@ static void auth_config_clear(struct auth_global_config *auth_config)
 	auth_config->users = NULL;
 }
 
+
 /**********************************commit_to_kernel************************/
-static int auth_config_to_kernel(struct auth_global_config *auth_config)
+static char *safe_strncpy(char *dst, const char *src, const size_t len)
+{
+	assert(dst);
+	assert(src);
+	if (strlen(src) >= len)
+	{
+		strncpy(dst, src, len - 1);
+		dst[len - 1] = '\0';
+	}
+	else
+	{
+		strncpy(dst, src, strlen(src));
+		dst[strlen(src)] = '\0';
+	}
+	return NULL;
+}
+
+static int32_t ioc_obj_pars_check(enum ARG_TYPE_E arg_type, uint16_t *real_nc)
+{
+	int32_t  ret = UGW_SUCCESS;
+	switch (arg_type) {
+		case AUTH_RULE:
+			ret = UGW_SUCCESS;
+			break;
+
+		case AUTH_OPTION:
+			*real_nc = 1;
+			ret = UGW_SUCCESS;
+			break;
+
+		case USER_SSTAT:
+			if (*real_nc == 0) {
+				ret = UGW_FAILED;
+				break;
+			}
+			ret = UGW_SUCCESS;
+			break;
+
+		case NET_IF_INFO:
+			ret = UGW_SUCCESS;
+			break;
+
+		default:
+			ret = UGW_FAILED;
+			break;
+	}
+	return ret;
+}
+
+
+struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_element)
+{
+	struct auth_ioc_arg *ioc_arg = NULL;
+	uint16_t header_len = 0, body_len = 0, unit_len = 0, real_nc = 0, total_len = 0, sub_header = 0;
+
+	real_nc = nc_element;
+	if (ioc_obj_pars_check(arg_type, &real_nc) == UGW_FAILED)
+	{
+		AUTH_ERROR("arg_type(%d)  is invalid.", arg_type);
+		return NULL;
+	}
+	header_len = sizeof(struct auth_ioc_arg);
+	switch (arg_type) {
+		case AUTH_RULE:
+			unit_len = sizeof(struct ip_range);
+			sub_header = sizeof(struct ioc_auth_ip_rule);
+			break;
+
+		case AUTH_OPTION:
+			unit_len = sizeof(struct ioc_auth_options);
+			break;
+
+		case USER_GSTAT:
+			unit_len = sizeof(struct user_stat_assist);
+			break;
+
+		case USER_SSTAT:
+			unit_len = sizeof(struct user_info);
+			break;
+
+		case NET_IF_INFO: 
+			unit_len = sizeof(struct ioc_auth_if_info);
+			break;
+
+		default:
+			unit_len = 0;
+			break;
+	}
+	if (unit_len == 0) {
+		AUTH_ERROR("Arg_type[%d] is invalid type.\n", arg_type);
+		return NULL;
+	}
+	body_len = real_nc * unit_len;
+	ioc_arg = (struct auth_ioc_arg*)malloc(header_len + sub_header + body_len);
+	if (ioc_arg == NULL) {
+		AUTH_ERROR("No memory.\n");
+		return NULL;
+	}
+	memset(ioc_arg, 0, total_len);
+	ioc_arg->type = arg_type;
+	ioc_arg->num = real_nc;
+	ioc_arg->data_len = body_len;
+	return ioc_arg;
+}
+
+
+void free_ioc_obj(struct auth_ioc_arg *arg)
+{
+	if (arg == NULL) {
+		return;
+	}
+	// if (arg->type == USER_GSTAT) {
+	// 	struct user_stat_assit *assist = 
+	// 			(struct user_stat_assist*)((void*)arg + sizeof(struct auth_ioc_arg));
+	// 	if (assist->addr) {
+	// 		free(assist->addr);
+	// 		assist->addr = NULL;
+	// 	}
+	// }
+	free(arg);
+}
+
+
+/*****************************************UPDATE_AUTH_IPRULES*******************************/
+static int auth_rule_ip_valid_check(uint32_t min_ip, uint32_t max_ip, uint8_t type, uint8_t enable, uint8_t priority)
+{
+	return UGW_SUCCESS;
+}
+
+
+static int set_auth_ip_ranges(struct auth_ioc_arg *arg, struct auth_ip_rule *ip_rule)
+{
+	assert(arg);
+	assert(ip_rule);
+	int i = 0;
+	struct ioc_auth_ip_rule *ioc_ip_rule = 
+			(struct ioc_auth_ip_rule*)((void*)arg + sizeof(struct auth_ioc_arg));
+	struct ip_range *ranges = (struct ip_range*)((void*)ioc_ip_rule + sizeof(struct ioc_auth_ip_rule));
+	for (i = 0; i < ip_rule->nc_ip_range; i++) {
+		ranges[i].min = ip_rule->ip_ranges[i].min;
+		ranges[i].max = ip_rule->ip_ranges[i].max;
+	}
+	safe_strncpy(ioc_ip_rule->name, ip_rule->name, AUTH_RULE_NAME_MAX);
+	ioc_ip_rule->type = ip_rule->type;
+	ioc_ip_rule->enable = ip_rule->enable;
+	ioc_ip_rule->priority = ip_rule->priority;
+	return UGW_SUCCESS;
+}
+
+
+int update_auth_ip_rules_to_kernel(struct auth_ip_rule *rules, uint16_t nc_rule)
+{
+	int i = 0, ret = UGW_SUCCESS, j = 0;
+ 	struct auth_ioc_arg *ioc_obj = NULL;
+ 	struct ioc_auth_ip_rule *ip_rule = NULL;
+
+ 	for (j = 0; j < nc_rule; j++) {
+		ioc_obj = create_ioc_obj(AUTH_RULE,  rules[j].nc_ip_range);
+		if (ioc_obj == NULL) {
+			AUTH_ERROR("No mem.\n");
+			ret = UGW_FAILED;
+			break;
+		}
+		set_auth_ip_ranges(ioc_obj, &rules[j]);
+		ret = ioctl(s_dev_fd, SIOCSAUTHRULES, ioc_obj);
+
+		free_ioc_obj(ioc_obj);
+		if (ret = UGW_FAILED) {
+			AUTH_ERROR("ioctl of update ip rules failed.\n");
+			break;
+		}
+ 	}
+	return ret;
+}
+
+
+/*****************************************UPDATE_NET_IF_INFOS*******************************/
+static int auth_if_info_valid_check(uint8_t type, const char *if_name)
+{
+	return UGW_SUCCESS;
+}
+
+
+int set_auth_if_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t type, const char *if_name)
+{
+	assert(arg);
+	struct ioc_auth_if_info *if_info = NULL;
+	if (auth_if_info_valid_check(type, if_name) == UGW_FAILED) {
+		return UGW_FAILED;
+	}
+	if (obj_id >= arg->num) {
+		AUTH_ERROR("OBJ_ID(%u) >= OBJ_COUNT(%u) out of range.\n");
+		return UGW_FAILED;
+	}
+	if_info = (struct ioc_auth_if_info*)((void*)arg + sizeof(struct auth_ioc_arg));
+	if_info[obj_id].type = type;
+	safe_strncpy(if_info[obj_id].if_name, if_name, IF_NAME_MAX);
+	return UGW_SUCCESS;
+}
+
+
+int update_auth_if_infos_to_kernel(struct auth_if_info *if_infos, uint16_t nc_info)
+{
+	int i = 0, ret = UGW_SUCCESS;
+
+	struct auth_ioc_arg *ioc_obj = create_ioc_obj(NET_IF_INFO, nc_info);
+	if (ioc_obj == NULL) {
+		AUTH_ERROR("No mem.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}	
+	if (nc_info != 0)
+	{
+		for (i = 0; if_infos && i < nc_info; i++) {
+			if (set_auth_if_info(ioc_obj, i, if_infos[i].type, if_infos[i].if_name) == UGW_FAILED) {
+				ret = UGW_FAILED;
+				goto OUT;
+			}
+		}
+	}
+	if (ioctl(s_dev_fd, SIOCSIFINFO, ioc_obj) != 0) {
+		AUTH_ERROR("ioctl of set auth if_infos failed.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	return ret;
+}
+
+
+/*****************************************UPDATE_AUTH_OPTIONS*******************************/
+static int auth_options_valid_check(uint32_t intval, const char *url, const char *title)
+{
+	return UGW_SUCCESS;
+}
+
+
+int set_auth_options(struct auth_ioc_arg *arg, uint32_t intval, const char *url, const char *title)
+{
+	assert(arg);
+	struct ioc_auth_options *option = NULL;
+
+	if (auth_options_valid_check(intval, url, title) == UGW_FAILED) {
+		return UGW_FAILED;
+	} 
+	option = (struct ioc_auth_options*)((void*)arg + sizeof(struct auth_ioc_arg));
+	option->user_check_intval = intval;
+	safe_strncpy(option->redirect_url, url, REDIRECT_URL_MAX);
+	safe_strncpy(option->redirect_title, title, REDIRECT_TITLE_MAX);
+	return UGW_SUCCESS;
+}
+
+
+int update_auth_options_to_kernel(struct auth_options *option)
+{
+	assert(option);
+	int ret = UGW_SUCCESS;
+	struct auth_ioc_arg *ioc_obj = create_ioc_obj(AUTH_OPTION, 1);
+	if (ioc_obj == NULL) {
+		AUTH_ERROR("No mem.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+	if (set_auth_options(ioc_obj, option->user_check_intval, option->redirect_url, 
+			option->redirect_title) == UGW_FAILED) {
+		ret =  UGW_FAILED;
+		goto OUT;
+	}
+	if (ioctl(s_dev_fd, SIOCSAUTHOPTIONS, ioc_obj) != 0) {
+		AUTH_ERROR("ioctl of set auth options failed.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	return ret;
+}
+
+
+/*****************************************UPDATE_USER_STATUS**********************************/
+static int user_set_stat_valid_check(uint32_t status, const unsigned char *mac)
 {
 
+}
+
+
+int set_user_set_stat(struct auth_ioc_arg *arg, uint16_t obj_id, uint32_t status, const unsigned char *mac)
+{
+	assert(arg);
+	struct user_info *user = NULL;
+
+	if (user_set_stat_valid_check(status, mac) == UGW_FAILED) {
+		return UGW_FAILED;
+	}
+	if (obj_id >= arg->num) {
+		AUTH_ERROR("OBJ_ID(%u) >= OBJ_COUNT(%u) out of range.\n");
+		return UGW_FAILED;
+	}
+	user = (struct user_info*)((void*)arg + sizeof(struct auth_ioc_arg));
+	user[obj_id].status = status;
+	memcpy(user[obj_id].mac, mac, ETH_ALEN);
+	return UGW_SUCCESS;
+}
+
+
+int update_user_stat_to_kernel(struct user_info *users, uint16_t nc_user)
+{
+	assert(users);
+	int i = 0, ret = UGW_SUCCESS;
+	struct auth_ioc_arg *ioc_obj = NULL;
+	if (nc_user == 0) {
+		AUTH_ERROR("Input parameters invalid.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+
+	ioc_obj = create_ioc_obj(USER_SSTAT, nc_user);
+	if (ioc_obj == NULL) {
+		AUTH_ERROR("No mem.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+	for (i = 0; i < nc_user; i++) {
+		if (set_user_set_stat(ioc_obj, i, users[i].status, users[i].mac) == UGW_FAILED) {
+			ret = UGW_FAILED;
+			break;
+		}
+	}
+	if (ioctl(s_dev_fd, SIOCSUSRSTAT, ioc_obj) != 0) {
+		AUTH_ERROR("ioctl of set user status failed.\n");
+	}
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	return ret;
+}
+
+
+/*************************************GET_USER_INFO*******************************************/
+static int user_get_stat_valid_check(uint16_t nc_element, uint64_t tm_stamp, unsigned long addr)
+{
+	return UGW_SUCCESS;
+}
+
+
+int set_user_get_stat(struct auth_ioc_arg *arg, uint16_t nc_element, uint64_t tm_stamp, unsigned long addr)
+{	
+	assert(arg);
+	struct user_stat_assist *assist = NULL;
+	if (user_get_stat_valid_check(nc_element, tm_stamp, addr) == UGW_FAILED) {
+		return UGW_FAILED;
+	}
+	assist = (struct user_stat_assist*)((void*)arg + sizeof(struct auth_ioc_arg));
+	assist->nc_element = nc_element;
+	assist->tm_stamp = tm_stamp;
+	assist->addr = addr;
+	return UGW_SUCCESS;
+}
+
+
+static struct user_stat_assist *create_user_info_buffer(uint16_t size)
+{
+	struct user_stat_assist *assist = NULL;
+	uint32_t header_len = 0, body_len = 0;
+
+	if (size == 0) {
+		AUTH_ERROR("Input parameters [%u] invalid.\n", size);
+		return NULL;
+	}
+	header_len = sizeof(struct user_stat_assist);
+	body_len = size * sizeof(struct user_info);
+	assist = (struct user_stat_assist*)malloc(header_len + body_len);
+	if (assist = NULL) {
+		AUTH_ERROR("No mem.\n");
+		return NULL;
+	}
+	memset(assist, 0, (header_len + body_len));
+}
+
+
+static void free_user_info_buffer(struct user_stat_assist *assist)
+{
+	if (assist == NULL) {
+		return;
+	}
+	free(assist);
+}
+
+
+static void print_user_info(struct user_stat_assist *assist, struct user_info *users)
+{
+	assert(assist);
+	assert(users);
+	int i = 0;
+	for (i = 0; i < assist->nc_user; i++) {
+		printf("%010u  %u  %010u %02X:%02X:%02X:%02X:%02X:%02X\n", 
+				users[i].ipv4, users[i].status, users[i].jf,
+				users[i].mac[0], users[i].mac[1], users[i].mac[2],
+				users[i].mac[3], users[i].mac[4], users[i].mac[5]);
+	}
+}
+
+
+int get_all_user_info_from_kernel()
+{
+	int more = 1, ret = 0, buff_len = 0;
+	uint64_t tm_stamp = clock();
+	struct user_stat_assist *assist = NULL;
+	struct auth_ioc_arg *ioc_obj = NULL;
+
+	ioc_obj = create_ioc_obj(USER_GSTAT, 1);
+	if (ioc_obj == NULL) {
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+	
+	assist = create_user_info_buffer(AUTH_USER_REQ_SIZE);
+	buff_len = sizeof(struct user_stat_assist) + AUTH_USER_REQ_SIZE * sizeof(struct user_info);
+	if (assist == NULL) {
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+
+	while (more) {
+		if (set_user_get_stat(ioc_obj, AUTH_USER_REQ_SIZE, tm_stamp, (unsigned long)assist) == UGW_FAILED) {
+			ret = UGW_FAILED;
+			break;
+		}
+		if (ioctl(s_dev_fd, SIOCGUSRSTAT, ioc_obj) != 0) {
+			AUTH_ERROR("ioctl of getting user info failed.\n");
+			ret = UGW_FAILED;
+			break;
+		}
+		print_user_info(assist, (struct user_info*)((void*)assist + sizeof(struct user_stat_assist)));
+		if (assist->more == 0) {
+			break;
+		}
+		memset(assist, 0, buff_len);
+	}
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	if (assist) {
+		free_user_info_buffer(assist);
+		assist = NULL;
+	}
+	return ret;
+}
+
+
+static int auth_config_to_kernel(struct auth_global_config *config)
+{
+	int i;
+	if (config->update_auth_opt) {
+		update_auth_options_to_kernel(&config->auth_opt);
+	}
+
+	if (config->update_ip_rules) {
+		//update_auth_ip_rules_to_kernel(config->ip_rules, config->nc_ip_rule);
+	}
+
+	if (config->update_if_infos) {
+		update_auth_if_infos_to_kernel(config->if_infos, config->nc_if);
+	}
+
+	if (config->update_user) {
+		update_user_stat_to_kernel(config->users, config->nc_user);
+	}
+
+	if (config->get_all_user) {
+		AUTH_INFO("GetAllUser:%d.\n", config->get_all_user);
+		get_all_user_info_from_kernel();
+	}
 }
 
 
