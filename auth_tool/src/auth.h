@@ -11,6 +11,7 @@
 #include <string.h>
 #include <limits.h>
 #include <errno.h>
+ #include <arpa/inet.h>
 #include "nxjson.h"
 
 
@@ -58,8 +59,8 @@ struct auth_ip_rule
 	uint32_t 	type;
 	uint32_t	enable;
 	uint32_t 	priority;
-	struct ip_range *ip_rules;
-	uint32_t 	nc_ip_rule;
+	struct ip_range *ip_ranges;
+	uint32_t 	nc_ip_range;
 };
 
 
@@ -104,14 +105,21 @@ struct auth_global_config {
 	uint8_t get_all_user;
 };
 
+#define NIPQUAD_FMT "%u.%u.%u.%u"
+#define NIPQUAD(addr) \
+ ((unsigned char *)&addr)[0], \
+ ((unsigned char *)&addr)[1], \
+ ((unsigned char *)&addr)[2], \
+ ((unsigned char *)&addr)[3]
+
 
 #define AUTH_NEW(type) \
 	AUTH_NEW_N(1, type)
 
 #define AUTH_NEW_N(n, type) \
-	((type *)alloc((n), sizeof(type)))
+	((type *)calloc((n), sizeof(type)))
 
-#define AUTH_DEBUG(format,...)   do { fprintf(stdin, "%s "format, __func__, ##__VA_ARGS__); } while(0)
-#define AUTH_INFO(format,...)    do { fprintf(stdin, "%s "format, __func__, ##__VA_ARGS__); } while(0)
+#define AUTH_DEBUG(format,...)   do { fprintf(stdout, "%s "format, __func__, ##__VA_ARGS__); } while(0)
+#define AUTH_INFO(format,...)    do { fprintf(stdout, "%s "format, __func__, ##__VA_ARGS__); } while(0)
 #define AUTH_ERROR(format,...)    do { fprintf(stderr, "%s "format, __func__, ##__VA_ARGS__); } while(0)
 #endif

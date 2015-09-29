@@ -208,7 +208,6 @@ static int auth_str_to_ip(const char *str, uint32_t *ip)
 {
 	uint32_t a,b,c,d;
 	char tmp;
-
 	if (sscanf(str, "%u.%u.%u.%u %c", &a, &b, &c, &d, &tmp) != 4 ||
 		a > 255 || b > 255 || c > 255 || d > 255) 
 	{
@@ -217,6 +216,7 @@ static int auth_str_to_ip(const char *str, uint32_t *ip)
 	}
 
 	*ip = (a << 24) | (b << 16) | (c << 8) | d;
+
 	return 0;
 }
 
@@ -263,7 +263,9 @@ static unsigned char* convert_addrstr_to_byte(char* addr, char* dst)
 /***************************************update_user_parsing**************************************/
 static void auth_update_user_cleanup(struct user_info *user)
 {
-	memset(user, 0, sizeof(struct user_info));
+	if (user) {
+		memset(user, 0, sizeof(struct user_info));
+	}
 }
 
 
@@ -372,19 +374,18 @@ fail:
 
 
 /***************************************ip_rule_parsing**************************************/
-static int auth_ip_range_init(struct ip_range *ip_rule, const nx_json *js)
+static int auth_ip_range_init(struct ip_range *range, const nx_json *js)
 {
 	int ret = -1;
 	char *start_ip = NULL, *end_ip = NULL;
 
-	memset(ip_rule, 0, sizeof(struct ip_range));
+	memset(range, 0, sizeof(struct ip_range));
 	if (auth_json_string_map(&start_ip, nx_json_get(js, "Start"), 
 			"config.AuthPolicy[n].IpRange[n].Start", IPV4_STR_LEN_MAX) != 0)
 	{
 		goto fail;
 	}
-
-	if (auth_str_to_ip(start_ip, &ip_rule->min) != 0)
+	if (auth_str_to_ip(start_ip, &range->min) != 0)
 	{
 		goto fail;
 	}
@@ -395,7 +396,7 @@ static int auth_ip_range_init(struct ip_range *ip_rule, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_str_to_ip(end_ip, &ip_rule->max) != 0)
+	if (auth_str_to_ip(end_ip, &range->max) != 0)
 	{
 		goto fail;
 	}
@@ -417,8 +418,8 @@ static void auth_ip_rule_cleanup(struct auth_ip_rule *rule)
 {
 	free(rule->name);
 	rule->name = NULL;
-	free(rule->ip_rules);
-	rule->ip_rules = NULL;
+	free(rule->ip_ranges);
+	rule->ip_ranges = NULL;
 	memset(rule, 0, sizeof(struct auth_ip_rule));
 }
 
@@ -460,7 +461,7 @@ static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_json_array_map(&rule->ip_rules, &rule->nc_ip_rule,
+	if (auth_json_array_map(&rule->ip_ranges, &rule->nc_ip_range,
 			nx_json_get(js, "IpRange"),
 			"config.AuthPolicy[n].IpRange",
 			AUTH_IP_RANGE_COUNT_MAX,
@@ -539,7 +540,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 
 	/*parse auth option*/
 	js_elem = nx_json_get(js, "GlobaleAuthOption");
-	if (js_elem) {
+	if (js_elem->type != NX_JSON_NULL) {
 		if (do_auth_option_parsing(&config->auth_opt, js_elem) == UGW_SUCCESS) {
 			config->update_auth_opt = 1;
 		}
@@ -550,7 +551,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 
 	/*parse auth rules*/
 	js_elem = nx_json_get(js, "AuthPolicy");
-	if (js_elem) {
+	if (js_elem->type != NX_JSON_NULL) {
 		if (do_auth_ip_rule_parsing(&config->ip_rules, &config->nc_ip_rule, js_elem) == UGW_SUCCESS) {
 			config->update_ip_rules = 1;
 		}
@@ -561,7 +562,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 
 	/*parse interface*/
 	js_elem = nx_json_get(js, "InterfaceInfo");
-	if (js_elem) {
+	if (js_elem->type != NX_JSON_NULL) {
 		if (do_auth_interface_parsing(&config->if_infos, &config->nc_if, js_elem) == UGW_SUCCESS) {
 			config->update_if_infos = 1;
 		}
@@ -572,7 +573,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 
 	/*parse user status*/
 	js_elem = nx_json_get(js, "UpdateUserStatus");
-	if (js_elem) {
+	if (js_elem->type != NX_JSON_NULL) {
 		if (do_auth_update_user_parsing(&config->users, &config->nc_user, js_elem) == UGW_SUCCESS) {
 			config->update_user = 1;
 		}
@@ -583,7 +584,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 
 	/*get_all_user info*/
 	js_elem =  nx_json_get(js, "GetAllUser");
-	if (js_elem) {
+	if (js_elem->type != NX_JSON_NULL) {
 		if (js_elem->int_value) {
 			config->get_all_user = 1;
 		}
@@ -599,53 +600,85 @@ fail:
 }
 
 
-static void auth_rule_dump(struct auth_ip_rule *rule)
+static void auth_ip_rule_dump(struct auth_ip_rule *rule)
 {
-	// int i;
+	int i;
 
-	// AUTH_INFO("~~~~~~~~~ AUTH RULE [%s] ~~~~~~~~~\n", rule->name);
-	// AUTH_INFO("id: %u.\n", rule->id);
-	// AUTH_INFO("desc: %s.\n", rule->desc);
-	// AUTH_INFO("type: %u.\n", rule->type);
-	// AUTH_INFO("enable: %u.\n", rule->enable);
-	// AUTH_INFO("ip rules count: %u.\n", rule->nc_ip_rule);
-	// for (i = 0; i < rule->nc_ip_rule; i++)
-	// {
-	// 	struct ip_range *ip_rule = &rule->ip_rules[i];
-	// 	AUTH_INFO("ip rule %d: [%pI4h, %pI4h].\n", i, &ip_rule->min, &ip_rule->max);
-	// }
+	AUTH_INFO("~~~~~~~~~ AUTH RULE [%s] ~~~~~~~~~\n", rule->name);
+	AUTH_INFO("type: %u.\n", rule->type);
+	AUTH_INFO("enable: %u.\n", rule->enable);
+	AUTH_INFO("ip range count: %u.\n", rule->nc_ip_range);
+	for (i = 0; i < rule->nc_ip_range; i++)
+	{
+		struct ip_range *range = &rule->ip_ranges[i];
+		uint32_t min = htonl(range->min), max = htonl(range->max);
+		AUTH_INFO("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", i, 
+					NIPQUAD(min), NIPQUAD(max));
+	}
+}
+
+
+static void auth_if_info_dump(struct auth_if_info *if_info)
+{
+	AUTH_INFO("~~~~~~~~~ AUTH_INTERFACE BEGIN~~~~~~~~~\n");
+	AUTH_INFO("Interface Type: %d.\n", if_info->type);
+	AUTH_INFO("Interface Name: %s.\n", if_info->if_name);
+	AUTH_INFO("~~~~~~~~~ AUTH_INTERFACE END~~~~~~~~~\n");
 }
 
 
 static void auth_option_dump(struct auth_options *option)
 {
-	// int i;
+	AUTH_INFO("~~~~~~~~~ AUTH OPTION BEGIN~~~~~~~~~\n");
+	AUTH_INFO("usr_check_intval: %u.\n", option->user_check_intval);
+	AUTH_INFO("redirect_url: %s.\n", option->redirect_url);
+	AUTH_INFO("redirect_title: %s.\n", option->redirect_title);
+	AUTH_INFO("~~~~~~~~~ AUTH OPTION END~~~~~~~~~\n\n");
+}
 
-	// AUTH_INFO("~~~~~~~~~ AUTH OPTION~~~~~~~~~\n");
-	// AUTH_INFO("usr_check_intval: %u.\n", option->usr_check_intval);
-	// AUTH_INFO("redirect_url: %s.\n", option->redirect_url);
-	// AUTH_INFO("redirect_title: %s.\n", option->redirect_title);
-	// AUTH_INFO("whilte_ip_rules count:%u.\n", option->nc_ip_rule);
-	// for (i = 0; i < option->nc_ip_rule; i++)
-	// {
-	// 	struct ip_range *ip_rule = &option->white_ip_rules[i];
-	// 	AUTH_INFO("ip rule %d: [%pI4h, %pI4h].\n", i, &ip_rule->min, &ip_rule->max);
-	// }
+static void auth_user_status_dump(struct user_info *user)
+{
+	AUTH_INFO("~~~~~~~~~ AUTH USER STATUS BEGIN~~~~~~~~~\n");
+ 	AUTH_INFO("UserMac:%02X:%02X:%02X:%02X:%02X:%02X.\n", 
+				user->mac[0],  user->mac[1],  user->mac[2],
+				user->mac[3],  user->mac[4],  user->mac[5]);
+	AUTH_INFO("Action: %d.\n", user->status);
+	AUTH_INFO("~~~~~~~~~ AUTH USER STATUS END~~~~~~~~~\n\n");
 }
 
 
 static void auth_config_dump(struct auth_global_config *config)
 {
-	// int i;
+	int i;
 
-	// AUTH_INFO("--------------- AUTH CONFIG ---------------\n");
-	// AUTH_INFO("auth rules count: %u.\n", config->nr_rule);
-	// for (i = 0; i < config->nr_rule; i++) 
-	// {
-	// 	auth_rule_dump(&config->rules[i]);
-	// }
-	// auth_option_dump(&config->auth_opt);
-	// AUTH_INFO("------------------------------------------\n");
+	AUTH_INFO("--------------- AUTH CONFIG ---------------\n");
+	if (config->update_auth_opt) {
+		auth_option_dump(&config->auth_opt);
+	}
+
+	if (config->update_ip_rules) {
+		for (i = 0; i < config->nc_ip_rule; i++) {
+			auth_ip_rule_dump(&config->ip_rules[i]);
+		}
+	}
+
+	if (config->update_if_infos) {
+		for (i = 0; i < config->nc_if; i++) {
+			auth_if_info_dump(&config->if_infos[i]);
+		}
+	}
+
+	if (config->update_user) {
+		for (i = 0; i < config->nc_user; i++) {
+			auth_user_status_dump(&config->users[i]);
+		}
+	}
+
+	if (config->get_all_user) {
+		AUTH_INFO("GetAllUser:%d.\n", config->get_all_user);
+	}
+
+	AUTH_INFO("------------------------------------------\n");
 }
 
 
@@ -708,8 +741,8 @@ static void auth_config_free(struct auth_global_config *auth_config)
 	}
 	if (auth_config->ip_rules) {
 		for (i = 0; i < auth_config->nc_ip_rule; i++) {
-			free(auth_config->ip_rules[i].ip_rules);
-			auth_config->ip_rules[i].ip_rules = NULL;
+			free(auth_config->ip_rules[i].ip_ranges);
+			auth_config->ip_rules[i].ip_ranges = NULL;
 		}
 		free(auth_config->ip_rules);
 		auth_config->ip_rules = NULL;
@@ -740,6 +773,17 @@ static void auth_config_free(struct auth_global_config *auth_config)
 	}
 }
 
+
+static void auth_config_clear(struct auth_global_config *auth_config)
+{
+	if (auth_config == NULL) {
+		return;
+	} 
+	memset(auth_config, 0, sizeof(struct auth_global_config));
+	auth_config->ip_rules = NULL;
+	auth_config->if_infos = NULL;
+	auth_config->users = NULL;
+}
 
 /**********************************commit_to_kernel************************/
 static int auth_config_to_kernel(struct auth_global_config *auth_config)
@@ -799,8 +843,9 @@ static int auth_input_valid_check(int argc, char **argv)
 int main(int argc, char **argv)
 {
 	int ret = 0;
-	struct auth_global_config auth_config;
+	struct auth_global_config auth_config;	
 
+	auth_config_clear(&auth_config);
 	ret = auth_input_valid_check(argc, argv);
 	if (ret == UGW_FAILED) {
 		goto OUT;
@@ -815,7 +860,7 @@ int main(int argc, char **argv)
 	if (ret == UGW_FAILED) {
 		goto OUT;
 	}
-
+	auth_config_dump(&auth_config);
 	ret = auth_config_to_kernel(&auth_config);
 
 OUT:
