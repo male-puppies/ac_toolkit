@@ -28,7 +28,7 @@ endef
 
 define Package/$(PKG_NAME)/install  
 	$(INSTALL_DIR) $(1)/usr/sbin 
-	$(INSTALL_BIN) $(SRC_DIR)/src/auth_tool $(1)/usr/sbin
+	$(INSTALL_BIN) $(SRC_DIR)/auth_tool $(1)/usr/sbin
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

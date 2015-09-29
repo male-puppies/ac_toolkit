@@ -1,7 +1,7 @@
 src = nxjson.c auth_main.c
 all:auth_tool 
 
-libapcommit: 
+auth_tool: 
 	$(CC) -g -fpic -shared  $(src)   -o auth_tool 
 	$(STRIP) auth_tool
 .PHONY : clean

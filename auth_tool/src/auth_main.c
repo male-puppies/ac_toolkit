@@ -5,6 +5,11 @@
 #define DRV_DESC	"auth driver"
 
 
+#define AUTH_USER_INFO_DEV	("/dev/auth_user_info")
+
+static int s_dev_fd = -1;
+
+
 /**************************CONFIG_PARSING*********************************/
 /*config verify*/
 static int auth_nxjson_verify(const nx_json *js_root)
@@ -103,7 +108,7 @@ static int auth_json_string_map(char **res, const nx_json *j_string,
 	}
 
 copy:
-	*res = AUTH_NEW_N(char, len + 1);
+	*res = AUTH_NEW_N((len + 1), char);
 	if (*res == NULL) 
 	{
 		AUTH_ERROR("%s.length == %d, out of memory\n", name, len);
@@ -256,7 +261,7 @@ static unsigned char* convert_addrstr_to_byte(char* addr, char* dst)
 }
 
 /***************************************update_user_parsing**************************************/
-static void auth_interface_cleanup(struct user_info *user)
+static void auth_update_user_cleanup(struct user_info *user)
 {
 	memset(user, 0, sizeof(struct user_info));
 }
@@ -279,7 +284,7 @@ static int auth_update_user_init(struct user_info *user, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_json_integer_map(&if_info->status, 
+	if (auth_json_integer_map(&user->status, 
 		nx_json_get(js, "Action"),  
 		"config.UpdateUserStatus[n].Action",
 		0, 1) != 0)
@@ -298,7 +303,7 @@ fail:
 	{
 		free(mac_str);
 	}
-	auth_interface_cleanup(rule);
+	auth_update_user_cleanup(user);
 	return -1;
 }
 
@@ -329,7 +334,7 @@ static int auth_interface_init(struct auth_if_info *if_info, const nx_json *js)
 {
 	memset(if_info, 0, sizeof(struct auth_if_info));
 
-	if (auth_json_string_map(&if_info->name,
+	if (auth_json_string_map(&if_info->if_name,
 			nx_json_get(js, "InterfaceName"),
 			"config.InterfaceInfo[n].InterfaceName",
 			IF_NAME_MAX) != 0) 
@@ -486,9 +491,9 @@ fail:
 
 
 /***************************************auth_option_parsing**************************************/
-static int do_auth_option_parsing(struct auth_options_st *auth_option, const nx_json *js)
+static int do_auth_option_parsing(struct auth_options *auth_option, const nx_json *js)
 {
-	memset(auth_option, 0, sizeof(struct auth_options_st));
+	memset(auth_option, 0, sizeof(struct auth_options));
 
 	if (auth_json_integer_map(&auth_option->user_check_intval, 
 		nx_json_get(js, "CheckOffline"),  
@@ -550,7 +555,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 			config->update_ip_rules = 1;
 		}
 		else {
-			goto faiL;
+			goto fail;
 		}
 	}
 
@@ -561,7 +566,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 			config->update_if_infos = 1;
 		}
 		else {
-			goto faiL;
+			goto fail;
 		}
 	}
 
@@ -572,7 +577,7 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 			config->update_user = 1;
 		}
 		else {
-			goto faiL;
+			goto fail;
 		}
 	}
 
@@ -596,51 +601,51 @@ fail:
 
 static void auth_rule_dump(struct auth_ip_rule *rule)
 {
-	int i;
+	// int i;
 
-	AUTH_INFO("~~~~~~~~~ AUTH RULE [%s] ~~~~~~~~~\n", rule->name);
-	AUTH_INFO("id: %u.\n", rule->id);
-	AUTH_INFO("desc: %s.\n", rule->desc);
-	AUTH_INFO("type: %u.\n", rule->type);
-	AUTH_INFO("enable: %u.\n", rule->enable);
-	AUTH_INFO("ip rules count: %u.\n", rule->nr_ip_rule);
-	for (i = 0; i < rule->nr_ip_rule; i++)
-	{
-		struct ip_range *ip_rule = &rule->ip_rules[i];
-		AUTH_INFO("ip rule %d: [%pI4h, %pI4h].\n", i, &ip_rule->min, &ip_rule->max);
-	}
+	// AUTH_INFO("~~~~~~~~~ AUTH RULE [%s] ~~~~~~~~~\n", rule->name);
+	// AUTH_INFO("id: %u.\n", rule->id);
+	// AUTH_INFO("desc: %s.\n", rule->desc);
+	// AUTH_INFO("type: %u.\n", rule->type);
+	// AUTH_INFO("enable: %u.\n", rule->enable);
+	// AUTH_INFO("ip rules count: %u.\n", rule->nc_ip_rule);
+	// for (i = 0; i < rule->nc_ip_rule; i++)
+	// {
+	// 	struct ip_range *ip_rule = &rule->ip_rules[i];
+	// 	AUTH_INFO("ip rule %d: [%pI4h, %pI4h].\n", i, &ip_rule->min, &ip_rule->max);
+	// }
 }
 
 
-static void auth_option_dump(struct auth_options_st *option)
+static void auth_option_dump(struct auth_options *option)
 {
-	int i;
+	// int i;
 
-	AUTH_INFO("~~~~~~~~~ AUTH OPTION~~~~~~~~~\n");
-	AUTH_INFO("usr_check_intval: %u.\n", option->usr_check_intval);
-	AUTH_INFO("redirect_url: %s.\n", option->redirect_url);
-	AUTH_INFO("redirect_title: %s.\n", option->redirect_title);
-	AUTH_INFO("whilte_ip_rules count:%u.\n", option->nr_ip_rule);
-	for (i = 0; i < option->nr_ip_rule; i++)
-	{
-		struct ip_range *ip_rule = &option->white_ip_rules[i];
-		AUTH_INFO("ip rule %d: [%pI4h, %pI4h].\n", i, &ip_rule->min, &ip_rule->max);
-	}
+	// AUTH_INFO("~~~~~~~~~ AUTH OPTION~~~~~~~~~\n");
+	// AUTH_INFO("usr_check_intval: %u.\n", option->usr_check_intval);
+	// AUTH_INFO("redirect_url: %s.\n", option->redirect_url);
+	// AUTH_INFO("redirect_title: %s.\n", option->redirect_title);
+	// AUTH_INFO("whilte_ip_rules count:%u.\n", option->nc_ip_rule);
+	// for (i = 0; i < option->nc_ip_rule; i++)
+	// {
+	// 	struct ip_range *ip_rule = &option->white_ip_rules[i];
+	// 	AUTH_INFO("ip rule %d: [%pI4h, %pI4h].\n", i, &ip_rule->min, &ip_rule->max);
+	// }
 }
 
 
 static void auth_config_dump(struct auth_global_config *config)
 {
-	int i;
+	// int i;
 
-	AUTH_INFO("--------------- AUTH CONFIG ---------------\n");
-	AUTH_INFO("auth rules count: %u.\n", config->nr_rule);
-	for (i = 0; i < config->nr_rule; i++) 
-	{
-		auth_rule_dump(&config->rules[i]);
-	}
-	auth_option_dump(&config->auth_opt);
-	AUTH_INFO("------------------------------------------\n");
+	// AUTH_INFO("--------------- AUTH CONFIG ---------------\n");
+	// AUTH_INFO("auth rules count: %u.\n", config->nr_rule);
+	// for (i = 0; i < config->nr_rule; i++) 
+	// {
+	// 	auth_rule_dump(&config->rules[i]);
+	// }
+	// auth_option_dump(&config->auth_opt);
+	// AUTH_INFO("------------------------------------------\n");
 }
 
 
@@ -652,7 +657,7 @@ static int auth_config_parsing(struct auth_global_config *config, const char *js
 	const nx_json *js = NULL;
 
 	memset(config, 0, sizeof(struct auth_global_config));
-	json_data = AUTH_NEW_N(char, size + 1);
+	json_data = AUTH_NEW_N((size + 1), char);
 	if (json_data == NULL) 
 	{
 		AUTH_ERROR("auth_config_parsing failed: out of memory.\n");
@@ -697,15 +702,24 @@ out:
 
 static void auth_config_free(struct auth_global_config *auth_config)
 {
+	int i = 0;
 	if (auth_config == NULL) {
 		return;
 	}
 	if (auth_config->ip_rules) {
+		for (i = 0; i < auth_config->nc_ip_rule; i++) {
+			free(auth_config->ip_rules[i].ip_rules);
+			auth_config->ip_rules[i].ip_rules = NULL;
+		}
 		free(auth_config->ip_rules);
 		auth_config->ip_rules = NULL;
 	}
 
 	if (auth_config->if_infos) {
+		for (i = 0; i < auth_config->nc_if; i++) {
+			free(auth_config->if_infos[i].if_name);
+			auth_config->if_infos[i].if_name = NULL;
+		}
 		free(auth_config->if_infos);
 		auth_config->if_infos = NULL;
 	}
@@ -739,8 +753,8 @@ static int dev_open()
 	if (s_dev_fd >= 0) {
 		return UGW_SUCCESS;
 	}
-	fd = open(AUTH_USER_INFO_DEV, O_RDWR);
-	if (fd < 0) {
+	s_dev_fd = open(AUTH_USER_INFO_DEV, O_RDWR);
+	if (s_dev_fd < 0) {
 		AUTH_ERROR("Open /dev/auth_user_info failed.\n");
 		return UGW_FAILED;
 	}
