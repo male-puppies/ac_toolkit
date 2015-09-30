@@ -13,6 +13,7 @@
 #include <errno.h>
  #include <arpa/inet.h>
 #include <assert.h>
+#include <stdarg.h>
 #include "nxjson.h"
 
 

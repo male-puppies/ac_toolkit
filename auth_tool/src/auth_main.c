@@ -819,9 +819,10 @@ static int32_t ioc_obj_pars_check(enum ARG_TYPE_E arg_type, uint16_t *real_nc)
 		case USER_SSTAT:
 			if (*real_nc == 0) {
 				ret = UGW_FAILED;
-				break;
 			}
-			ret = UGW_SUCCESS;
+			else {
+				ret = UGW_SUCCESS;
+			}
 			break;
 
 		case NET_IF_INFO:
@@ -850,8 +851,9 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 	header_len = sizeof(struct auth_ioc_arg);
 	switch (arg_type) {
 		case AUTH_RULE:
-			unit_len = sizeof(struct ip_range);
+			unit_len = sizeof(struct ip_range) * nc_element;
 			sub_header = sizeof(struct ioc_auth_ip_rule);
+			real_nc = 1;
 			break;
 
 		case AUTH_OPTION:
@@ -887,7 +889,7 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 	memset(ioc_arg, 0, total_len);
 	ioc_arg->type = arg_type;
 	ioc_arg->num = real_nc;
-	ioc_arg->data_len = body_len;
+	ioc_arg->data_len = body_len + sub_header;
 	return ioc_arg;
 }
 
@@ -910,6 +912,40 @@ void free_ioc_obj(struct auth_ioc_arg *arg)
 
 
 /*****************************************UPDATE_AUTH_IPRULES*******************************/
+static void display_auth_ip_rule_objs(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	void *header = NULL;
+	int i = 0, j = 0, offset = 0;
+	struct ioc_auth_ip_rule *ip_rule = NULL;
+	struct ip_range *ranges = NULL;
+
+	header = (void*)ioc_obj;
+	offset = sizeof(struct auth_ioc_arg);
+
+	AUTH_DEBUG("***************AUTH_IP_RULE_OBJS****************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	for (i = 0; i < ioc_obj->num; i++) {
+		ip_rule = (struct ioc_auth_ip_rule*)((void*)header + offset);
+		AUTH_DEBUG("RULE_NAME:%s\n", ip_rule->name);
+		AUTH_DEBUG("RULE_TYPE:%d\n", ip_rule->type);
+		AUTH_DEBUG("RULE_ENABLE:%d\n", ip_rule->enable);
+		AUTH_DEBUG("RULE_PRIORITY:%d\n", ip_rule->priority);
+		AUTH_DEBUG("RULE_NC_IPRANGE:%d\n", ip_rule->nc_ip_range);
+		ranges = (struct ip_range*)((void*)ip_rule + sizeof(struct ioc_auth_ip_rule));
+		for (j = 0; j < ip_rule->nc_ip_range; j++) {
+			uint32_t min = htonl(ranges[j].min), max = htonl(ranges[j].max);
+			AUTH_DEBUG("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", i, 
+					NIPQUAD(min), NIPQUAD(max));
+		}
+		offset += ip_rule->nc_ip_range * sizeof(struct ip_range) + sizeof(struct ioc_auth_ip_rule);
+		AUTH_DEBUG("****************************************\n\n");
+	}
+	AUTH_DEBUG("***************AUTH_IP_RULE_OBJ****************\n\n");
+}
+
 static int auth_rule_ip_valid_check(uint32_t min_ip, uint32_t max_ip, uint8_t type, uint8_t enable, uint8_t priority)
 {
 	return UGW_SUCCESS;
@@ -932,37 +968,146 @@ static int set_auth_ip_ranges(struct auth_ioc_arg *arg, struct auth_ip_rule *ip_
 	ioc_ip_rule->type = ip_rule->type;
 	ioc_ip_rule->enable = ip_rule->enable;
 	ioc_ip_rule->priority = ip_rule->priority;
+	ioc_ip_rule->nc_ip_range = ip_rule->nc_ip_range;
 	return UGW_SUCCESS;
+}
+
+
+/*format:header[auth_ioc_arg]+{(sub_header+body):(sub_header+body)}*/
+static struct auth_ioc_arg *pack_auth_ip_rule_objs(uint8_t obj_cnt,...)
+{
+	assert(obj_cnt >= 2);
+	int i = 0;
+	va_list vars;
+	uint32_t data_len = 0, num = 0;
+	struct auth_ioc_arg *ioc_obj = NULL, **ioc_obj_arr = NULL;
+	struct ioc_auth_ip_rule *dst_sub_rule = NULL, *src_sub_rule = NULL;
+
+	ioc_obj_arr = AUTH_NEW_N(obj_cnt, struct auth_ioc_arg*);
+	if (ioc_obj_arr == NULL) {
+		goto NO_MEM;
+	}
+	va_start(vars, obj_cnt);
+	for (i = 0; i < obj_cnt; i++)
+	{
+		ioc_obj_arr[i] = va_arg(vars, struct auth_ioc_arg*);
+		if (ioc_obj_arr[i]) {
+			data_len += ioc_obj_arr[i]->data_len;
+			num += ioc_obj_arr[i]->num;
+		}
+	}
+	va_end(vars);
+	ioc_obj = (struct auth_ioc_arg*)AUTH_NEW_N((sizeof(struct auth_ioc_arg) + data_len), char);
+	if (ioc_obj == NULL) {
+		goto NO_MEM;
+	}
+	ioc_obj->type = AUTH_RULE;
+	ioc_obj->num = num;
+	ioc_obj->data_len = data_len;
+	dst_sub_rule = (struct ioc_auth_ip_rule*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	for (i = 0; i < obj_cnt; i++) {
+		if (ioc_obj_arr[i] == NULL) {
+			continue;
+		}	
+		src_sub_rule = 
+			(struct ioc_auth_ip_rule*)((void*)ioc_obj_arr[i] + sizeof(struct auth_ioc_arg));
+		memcpy(dst_sub_rule, src_sub_rule, ioc_obj_arr[i]->data_len);
+		dst_sub_rule = (struct ioc_auth_ip_rule*) ((void*)dst_sub_rule + ioc_obj_arr[i]->data_len);
+		free(ioc_obj_arr[i]);
+	}
+	free(ioc_obj_arr);
+	return ioc_obj;
+
+NO_MEM:
+	if (ioc_obj_arr) {
+		free(ioc_obj_arr);
+	}
+	return NULL;
 }
 
 
 int update_auth_ip_rules_to_kernel(struct auth_ip_rule *rules, uint16_t nc_rule)
 {
-	int i = 0, ret = UGW_SUCCESS, j = 0;
- 	struct auth_ioc_arg *ioc_obj = NULL;
+	assert(rules);
+
+	int i = 0, ret = UGW_SUCCESS;
+ 	struct auth_ioc_arg *ioc_obj = NULL, *packed_ioc_obj = NULL, **ioc_obj_arr = NULL;
  	struct ioc_auth_ip_rule *ip_rule = NULL;
 
- 	for (j = 0; j < nc_rule; j++) {
-		ioc_obj = create_ioc_obj(AUTH_RULE,  rules[j].nc_ip_range);
-		if (ioc_obj == NULL) {
-			AUTH_ERROR("No mem.\n");
-			ret = UGW_FAILED;
-			break;
-		}
-		set_auth_ip_ranges(ioc_obj, &rules[j]);
-		ret = ioctl(s_dev_fd, SIOCSAUTHRULES, ioc_obj);
-
-		free_ioc_obj(ioc_obj);
-		if (ret = UGW_FAILED) {
-			AUTH_ERROR("ioctl of update ip rules failed.\n");
-			break;
-		}
+ 	ioc_obj_arr = AUTH_NEW_N(nc_rule, struct auth_ioc_arg*);
+ 	if (ioc_obj_arr == NULL) {
+ 		goto NO_MEM;
  	}
+
+ 	for (i = 0; i < nc_rule; i++) {
+ 		ioc_obj_arr[i] = NULL;
+ 	}
+
+ 	for (i = 0; i < nc_rule; i++) {
+		ioc_obj_arr[i] = create_ioc_obj(AUTH_RULE,  rules[i].nc_ip_range);
+		if (ioc_obj_arr[i] == NULL) {
+			goto NO_MEM;
+		}
+		set_auth_ip_ranges(ioc_obj_arr[i], &rules[i]);
+ 	}
+ 	for (i = 0; i < nc_rule; i++) {
+ 		if (packed_ioc_obj) {
+ 			packed_ioc_obj = pack_auth_ip_rule_objs(2, ioc_obj, ioc_obj_arr[i]);
+ 			if (packed_ioc_obj == NULL) {
+ 				goto NO_MEM;
+ 			}
+ 			ioc_obj_arr[i] = NULL;
+ 			ioc_obj = packed_ioc_obj;
+ 		}
+ 		else {
+ 			packed_ioc_obj = ioc_obj_arr[i];	/*ioc_obj_arr[0]*/
+ 			ioc_obj = packed_ioc_obj;
+ 		}
+ 	}
+
+ 	display_auth_ip_rule_objs(packed_ioc_obj);
+	ret = ioctl(s_dev_fd, SIOCSAUTHRULES, packed_ioc_obj);
+	if (ret = UGW_FAILED) {
+		AUTH_ERROR("ioctl of update ip rules failed.\n");
+	}
+	free_ioc_obj(packed_ioc_obj);
+	free(ioc_obj_arr);
 	return ret;
+NO_MEM:
+	if (ioc_obj_arr) {
+		for (i = 0; i < nc_rule; i++) {
+			if (ioc_obj_arr[i]) {
+				free(ioc_obj_arr[i]);
+			}
+		}
+		free(ioc_obj_arr);
+	}
+	if (ioc_obj) {
+		free(ioc_obj);
+	}
+	return UGW_FAILED;
 }
 
 
 /*****************************************UPDATE_NET_IF_INFOS*******************************/
+static void display_if_info_ioc_obj(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	int i = 0;
+	struct ioc_auth_if_info *if_info = 
+			(struct ioc_auth_if_info*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	AUTH_DEBUG("*************AUTH_OPTION IOC_OBJ***************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	for (i = 0; i < ioc_obj->num; i++) {
+		AUTH_DEBUG("Interface_Type:%d\n", if_info[i].type);
+		AUTH_DEBUG("Interface_Name:%s\n", if_info[i].if_name);
+	}
+	AUTH_DEBUG("***********************************************\n\n");
+}
+
+
 static int auth_if_info_valid_check(uint8_t type, const char *if_name)
 {
 	return UGW_SUCCESS;
@@ -1006,6 +1151,7 @@ int update_auth_if_infos_to_kernel(struct auth_if_info *if_infos, uint16_t nc_in
 			}
 		}
 	}
+	display_if_info_ioc_obj(ioc_obj);
 	if (ioctl(s_dev_fd, SIOCSIFINFO, ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of set auth if_infos failed.\n");
 		ret = UGW_FAILED;
@@ -1021,6 +1167,21 @@ OUT:
 
 
 /*****************************************UPDATE_AUTH_OPTIONS*******************************/
+static void display_auth_options_ioc_obj(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	struct ioc_auth_options *option = 
+			(struct ioc_auth_options*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	AUTH_DEBUG("*************AUTH_OPTION IOC_OBJ***************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	AUTH_DEBUG("USER_CHECK_INTVAL:%d\n", option->user_check_intval);
+	AUTH_DEBUG("REDIRECT_URL:%s\n", option->redirect_url);
+	AUTH_DEBUG("REDIRECT_TITLE:%s\n", option->redirect_title);
+	AUTH_DEBUG("***********************************************\n\n");
+}
+
 static int auth_options_valid_check(uint32_t intval, const char *url, const char *title)
 {
 	return UGW_SUCCESS;
@@ -1058,6 +1219,7 @@ int update_auth_options_to_kernel(struct auth_options *option)
 		ret =  UGW_FAILED;
 		goto OUT;
 	}
+	display_auth_options_ioc_obj(ioc_obj);
 	if (ioctl(s_dev_fd, SIOCSAUTHOPTIONS, ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of set auth options failed.\n");
 		ret = UGW_FAILED;
@@ -1073,6 +1235,26 @@ OUT:
 
 
 /*****************************************UPDATE_USER_STATUS**********************************/
+static void display_update_user_stat_ioc_obj(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	int i = 0;
+	struct user_info *users = 
+			(struct user_info*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	AUTH_DEBUG("*************UPDATE_USER IOC_OBJ***************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	for (i = 0; i < ioc_obj->num; i++) {
+		 AUTH_INFO("UserMac:%02X:%02X:%02X:%02X:%02X:%02X.\n", 
+				users[i].mac[0],  users[i].mac[1],  users[i].mac[2],
+				users[i].mac[3],  users[i].mac[4],  users[i].mac[5]);
+		AUTH_INFO("Action: %d.\n", users[i].status);
+	}
+	AUTH_DEBUG("***********************************************\n\n");
+}
+
+
 static int user_set_stat_valid_check(uint32_t status, const unsigned char *mac)
 {
 
@@ -1121,6 +1303,7 @@ int update_user_stat_to_kernel(struct user_info *users, uint16_t nc_user)
 			break;
 		}
 	}
+	display_update_user_stat_ioc_obj(ioc_obj);
 	if (ioctl(s_dev_fd, SIOCSUSRSTAT, ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of set user status failed.\n");
 	}
@@ -1255,7 +1438,7 @@ static int auth_config_to_kernel(struct auth_global_config *config)
 	}
 
 	if (config->update_ip_rules) {
-		//update_auth_ip_rules_to_kernel(config->ip_rules, config->nc_ip_rule);
+		update_auth_ip_rules_to_kernel(config->ip_rules, config->nc_ip_rule);
 	}
 
 	if (config->update_if_infos) {
@@ -1341,7 +1524,6 @@ int main(int argc, char **argv)
 	if (ret == UGW_FAILED) {
 		goto OUT;
 	}
-	auth_config_dump(&auth_config);
 	ret = auth_config_to_kernel(&auth_config);
 
 OUT:
