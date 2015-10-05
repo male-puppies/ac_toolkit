@@ -1353,7 +1353,7 @@ static struct user_stat_assist *create_user_info_buffer(uint16_t size)
 	header_len = sizeof(struct user_stat_assist);
 	body_len = size * sizeof(struct user_info);
 	assist = (struct user_stat_assist*)malloc(header_len + body_len);
-	if (assist = NULL) {
+	if (assist == NULL) {
 		AUTH_ERROR("No mem.\n");
 		return NULL;
 	}
@@ -1415,9 +1415,7 @@ int get_all_user_info_from_kernel()
 			break;
 		}
 		print_user_info(assist, (struct user_info*)((void*)assist + sizeof(struct user_stat_assist)));
-		if (assist->more == 0) {
-			break;
-		}
+		more = assist->more;
 		memset(assist, 0, buff_len);
 	}
 OUT:
