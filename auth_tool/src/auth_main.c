@@ -499,7 +499,7 @@ static int do_auth_option_parsing(struct auth_options *auth_option, const nx_jso
 	if (auth_json_integer_map(&auth_option->user_check_intval, 
 		nx_json_get(js, "CheckOffline"),  
 		"config.GlobaleAuthOption.CheckOffline",
-		0, USR_CHECK_INTVAL_MAX) != 0)
+		USR_CHECK_INTVAL_MIN, USR_CHECK_INTVAL_MAX) != 0)
 	{
 		goto fail;
 	}
@@ -825,6 +825,10 @@ static int32_t ioc_obj_pars_check(enum ARG_TYPE_E arg_type, uint16_t *real_nc)
 			}
 			break;
 
+		case USER_GSTAT:	
+			*real_nc = 1;
+			ret = UGW_SUCCESS;
+
 		case NET_IF_INFO:
 			ret = UGW_SUCCESS;
 			break;
@@ -1066,8 +1070,7 @@ int update_auth_ip_rules_to_kernel(struct auth_ip_rule *rules, uint16_t nc_rule)
  	}
 
  	display_auth_ip_rule_objs(packed_ioc_obj);
-	ret = ioctl(s_dev_fd, SIOCSAUTHRULES, packed_ioc_obj);
-	if (ret = UGW_FAILED) {
+	if (ioctl(s_dev_fd, SIOCSAUTHRULES, packed_ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of update ip rules failed.\n");
 	}
 	free_ioc_obj(packed_ioc_obj);
@@ -1257,7 +1260,7 @@ static void display_update_user_stat_ioc_obj(struct auth_ioc_arg *ioc_obj)
 
 static int user_set_stat_valid_check(uint32_t status, const unsigned char *mac)
 {
-
+	return UGW_SUCCESS;
 }
 
 
@@ -1486,7 +1489,7 @@ static void auth_redirect_usage(int status)
 {
 	int i;
   	FILE *f = status ? stderr : stdout;
-  	AUTH_ERROR("%s\n", "Usage: auth_redirect par_str");
+  	AUTH_ERROR("%s\n", "Usage: auth_redirect json_str");
 }
 
 

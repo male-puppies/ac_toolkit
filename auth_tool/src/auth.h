@@ -27,9 +27,12 @@
 #define SIOCSIFINFO			0x104	/*set network interface*/
 
 #define ETH_ALEN				6
-#define	REDIRECT_URL_MAX		256
-#define REDIRECT_TITLE_MAX		256
+
+#define USR_CHECK_INTVAL_MIN	1
 #define USR_CHECK_INTVAL_MAX	INT_MAX
+
+#define	REDIRECT_URL_MAX		256
+#define REDIRECT_TITLE_MAX		128
 
 #define AUTH_RULE_COUNT_MAX		128		/*the max size of rule record*/
 #define AUTH_RULE_NAME_MAX		128		/*the max name size of rule*/
@@ -65,7 +68,6 @@ struct auth_ip_rule
 	uint32_t 	nc_ip_range;
 };
 
-
 struct ioc_auth_ip_rule {
 	char		name[AUTH_RULE_NAME_MAX];
 	uint32_t 	type;
@@ -74,16 +76,6 @@ struct ioc_auth_ip_rule {
 	uint32_t 	nc_ip_range;
 	/*struct ip_range *ip_ranges*/
 };
-
-// /*ipv4 range*/
-// struct auth_ip_rule {
-// 	uint8_t 	type;	/*normal, white, black*/
-// 	uint8_t		priority;
-// 	uint8_t 	enable;
-// 	uint32_t	min;	/*min ip*/
-// 	uint32_t 	max;	/*max ip*/
-// };
-
 
 /*interface info*/
 struct auth_if_info {
@@ -140,10 +132,9 @@ struct auth_global_config {
 #define AUTH_NEW_N(n, type) \
 	((type *)calloc((n), sizeof(type)))
 
-#define AUTH_DEBUG(format,...)   do { fprintf(stdout, "%s "format, __func__, ##__VA_ARGS__); } while(0)
+#define AUTH_DEBUG(format,...)   do { fprintf(stderr, "%s "format, __func__, ##__VA_ARGS__); } while(0)
 #define AUTH_INFO(format,...)    do { fprintf(stdout, "%s "format, __func__, ##__VA_ARGS__); } while(0)
 #define AUTH_ERROR(format,...)    do { fprintf(stderr, "%s "format, __func__, ##__VA_ARGS__); } while(0)
-
 
 
 //#define IP_RULE_TYPE_NUM	3
@@ -230,5 +221,15 @@ struct auth_ioc_arg {
 	uint16_t	data_len;	/*num * sizeof element*/
 	/*element data body*/
 };
+
+
+// struct ioc_auth_ip_rule {
+// 	char		name[AUTH_RULE_NAME_MAX];
+// 	uint32_t 	type;
+// 	uint32_t	enable;
+// 	uint32_t 	priority;
+// 	uint32_t 	nc_ip_range;
+// 	/*struct ip_range *ip_ranges*/
+// };
 
 #endif
