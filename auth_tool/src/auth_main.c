@@ -1375,9 +1375,11 @@ static void print_user_info(struct user_stat_assist *assist, struct user_info *u
 	assert(assist);
 	assert(users);
 	int i = 0;
+	uint32_t user_ip = 0;
 	for (i = 0; i < assist->nc_user; i++) {
-		printf("%010u  %u  %010u %02X:%02X:%02X:%02X:%02X:%02X\n", 
-				users[i].ipv4, users[i].status, users[i].jf,
+		user_ip = htonl(users[i].ipv4);
+		printf("ip:"NIPQUAD_FMT" status:%u jiffies:%010u mac:%02x:%02x:%02x:%02x:%02x:%02x\n", 
+				NIPQUAD(user_ip), users[i].status, users[i].jf,
 				users[i].mac[0], users[i].mac[1], users[i].mac[2],
 				users[i].mac[3], users[i].mac[4], users[i].mac[5]);
 	}
