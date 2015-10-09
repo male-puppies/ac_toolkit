@@ -193,7 +193,6 @@ static int auth_json_array_map(
 }
 
 
-
 #define auth_json_array_map(res, nr_res, j_array, name, max_length, elem_type, ctor, dtor) \
 	((void)(*(res) == (elem_type *)NULL), \
 		(void)((ctor) == (int (*)(elem_type *, const nx_json *))NULL), \
@@ -216,7 +215,6 @@ static int auth_str_to_ip(const char *str, uint32_t *ip)
 	}
 
 	*ip = (a << 24) | (b << 16) | (c << 8) | d;
-
 	return 0;
 }
 
@@ -611,9 +609,8 @@ static void auth_ip_rule_dump(struct auth_ip_rule *rule)
 	for (i = 0; i < rule->nc_ip_range; i++)
 	{
 		struct ip_range *range = &rule->ip_ranges[i];
-		uint32_t min = htonl(range->min), max = htonl(range->max);
 		AUTH_INFO("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", i, 
-					NIPQUAD(min), NIPQUAD(max));
+					NIPQUAD(range->min), NIPQUAD(range->max));
 	}
 }
 
@@ -940,9 +937,8 @@ static void display_auth_ip_rule_objs(struct auth_ioc_arg *ioc_obj)
 		AUTH_DEBUG("RULE_NC_IPRANGE:%d\n", ip_rule->nc_ip_range);
 		ranges = (struct ip_range*)((void*)ip_rule + sizeof(struct ioc_auth_ip_rule));
 		for (j = 0; j < ip_rule->nc_ip_range; j++) {
-			uint32_t min = htonl(ranges[j].min), max = htonl(ranges[j].max);
-			AUTH_DEBUG("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", i, 
-					NIPQUAD(min), NIPQUAD(max));
+			AUTH_DEBUG("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", j, 
+					NIPQUAD(ranges[j].min), NIPQUAD(ranges[j].max));
 		}
 		offset += ip_rule->nc_ip_range * sizeof(struct ip_range) + sizeof(struct ioc_auth_ip_rule);
 		AUTH_DEBUG("****************************************\n\n");
@@ -1377,9 +1373,8 @@ static void print_user_info(struct user_stat_assist *assist, struct user_info *u
 	int i = 0;
 	uint32_t user_ip = 0;
 	for (i = 0; i < assist->nc_user; i++) {
-		user_ip = htonl(users[i].ipv4);
-		printf("ip:"NIPQUAD_FMT" status:%u jiffies:%010u mac:%02x:%02x:%02x:%02x:%02x:%02x\n", 
-				NIPQUAD(user_ip), users[i].status, users[i].jf,
+		printf("ip:"NIPQUAD_FMT" st:%u jf:%llu mac:%02x:%02x:%02x:%02x:%02x:%02x\n", 
+				NIPQUAD(users[i].ipv4), users[i].status, users[i].jf,
 				users[i].mac[0], users[i].mac[1], users[i].mac[2],
 				users[i].mac[3], users[i].mac[4], users[i].mac[5]);
 	}

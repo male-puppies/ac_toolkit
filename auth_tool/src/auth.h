@@ -91,12 +91,15 @@ struct auth_options
 	char		*redirect_title;
 };
 
+#pragma pack(4)
 struct user_info {
 	uint32_t ipv4;
 	uint32_t status;
 	uint64_t jf;
 	unsigned char mac[ETH_ALEN];
+	unsigned char reserved[2];
 };
+#pragma pack()
 
 /*global config*/
 struct auth_global_config {
@@ -120,10 +123,10 @@ struct auth_global_config {
 
 #define NIPQUAD_FMT "%u.%u.%u.%u"
 #define NIPQUAD(addr) \
- ((unsigned char *)&addr)[0], \
- ((unsigned char *)&addr)[1], \
+ ((unsigned char *)&addr)[3], \
  ((unsigned char *)&addr)[2], \
- ((unsigned char *)&addr)[3]
+ ((unsigned char *)&addr)[1], \
+ ((unsigned char *)&addr)[0]
 
 
 #define AUTH_NEW(type) \
