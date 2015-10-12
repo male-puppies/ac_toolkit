@@ -16,9 +16,10 @@
 #include <stdarg.h>
 #include "nxjson.h"
 
+#define DEBUG_ENABLE 		1		/*DEBUG PRINT SWITCH*/
 
-#define UGW_SUCCESS		0
-#define UGW_FAILED		-1
+#define UGW_SUCCESS			0
+#define UGW_FAILED			-1
 
 #define SIOCSAUTHRULES		0x100	/*set auth rules*/
 #define SIOCSAUTHOPTIONS	0x101	/*set auth options*/
@@ -52,7 +53,7 @@
 
 #define AUTH_USER_REQ_SIZE 		512
 struct ip_range
-{
+{	/*host order which may be big endian or small endian*/
 	uint32_t min;
 	uint32_t max;
 };
@@ -89,6 +90,7 @@ struct auth_options
 	uint32_t	user_check_intval;	/*unit:minutes*/
 	char 		*redirect_url;
 	char		*redirect_title;
+	uint32_t    bypass_enable;
 };
 
 #pragma pack(4)
@@ -121,8 +123,14 @@ struct auth_global_config {
 	uint8_t get_all_user;
 };
 
-#define NIPQUAD_FMT "%u.%u.%u.%u"
+#define IPQUAD_FMT "%u.%u.%u.%u"
 #define NIPQUAD(addr) \
+ ((unsigned char *)&addr)[0], \
+ ((unsigned char *)&addr)[1], \
+ ((unsigned char *)&addr)[2], \
+ ((unsigned char *)&addr)[3]
+
+#define HIPQUAD(addr) \
  ((unsigned char *)&addr)[3], \
  ((unsigned char *)&addr)[2], \
  ((unsigned char *)&addr)[1], \
@@ -162,6 +170,7 @@ struct ioc_auth_options {
 	uint32_t	user_check_intval;	/*unit: seconds*/
 	char 		redirect_url[REDIRECT_URL_MAX];	
 	char		redirect_title[REDIRECT_TITLE_MAX];
+	uint32_t    bypass_enable;
 };
 
 enum ARG_TYPE_E {

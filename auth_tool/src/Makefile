@@ -4,7 +4,7 @@ all:auth_tool
 
 auth_tool:$(src) $(header) 
 	$(CC) $(src) -o auth_tool 
-	#$(STRIP) auth_tool
+	$(STRIP) auth_tool
 .PHONY : clean
 
 clean:

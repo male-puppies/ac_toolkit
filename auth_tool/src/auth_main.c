@@ -3,8 +3,6 @@
 
 #define DRV_VERSION	"0.1.1"
 #define DRV_DESC	"auth driver"
-
-
 #define AUTH_USER_INFO_DEV	("/dev/auth_user_info")
 
 static int s_dev_fd = -1;
@@ -203,6 +201,10 @@ static int auth_json_array_map(
 			(void (*)(void *))(dtor))) 
 
 
+/*
+*Notice:the ip-value stored as host order, which may be big endian or small endian.
+*We can't make any assume to the order of current host.
+*/
 static int auth_str_to_ip(const char *str, uint32_t *ip)
 {
 	uint32_t a,b,c,d;
@@ -218,6 +220,11 @@ static int auth_str_to_ip(const char *str, uint32_t *ip)
 	return 0;
 }
 
+
+/*
+*convertting mac str, which format is "XX:XX:XX:XX:XX:XX", to mac_bytes which consist of six bytes.
+*for example, "01:AB:DE:FF:90:38" TO "01abdeff9038" 
+*/
 static unsigned char* convert_addrstr_to_byte(char* addr, char* dst)
 {
 	int i = 0;
@@ -518,6 +525,14 @@ static int do_auth_option_parsing(struct auth_options *auth_option, const nx_jso
 		goto fail;
 	}
 
+	if (auth_json_integer_map(&auth_option->bypass_enable, 
+		nx_json_get(js, "GlobalBypass"),  
+		"config.GlobaleAuthOption.GlobalBypass",
+		0, 1) != 0)
+	{
+		goto fail;
+	}
+
 	return 0;
 fail:
 	return -1;
@@ -601,7 +616,6 @@ fail:
 static void auth_ip_rule_dump(struct auth_ip_rule *rule)
 {
 	int i;
-
 	AUTH_INFO("~~~~~~~~~ AUTH RULE [%s] ~~~~~~~~~\n", rule->name);
 	AUTH_INFO("type: %u.\n", rule->type);
 	AUTH_INFO("enable: %u.\n", rule->enable);
@@ -609,8 +623,8 @@ static void auth_ip_rule_dump(struct auth_ip_rule *rule)
 	for (i = 0; i < rule->nc_ip_range; i++)
 	{
 		struct ip_range *range = &rule->ip_ranges[i];
-		AUTH_INFO("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", i, 
-					NIPQUAD(range->min), NIPQUAD(range->max));
+		AUTH_INFO("ip range %d: ["IPQUAD_FMT","IPQUAD_FMT"].\n", i, 
+					HIPQUAD(range->min), HIPQUAD(range->max));
 	}
 }
 
@@ -630,6 +644,7 @@ static void auth_option_dump(struct auth_options *option)
 	AUTH_INFO("usr_check_intval: %u.\n", option->user_check_intval);
 	AUTH_INFO("redirect_url: %s.\n", option->redirect_url);
 	AUTH_INFO("redirect_title: %s.\n", option->redirect_title);
+	AUTH_INFO("bypass_enable: %u.\n", option->bypass_enable);
 	AUTH_INFO("~~~~~~~~~ AUTH OPTION END~~~~~~~~~\n\n");
 }
 
@@ -714,7 +729,10 @@ static int auth_config_parsing(struct auth_global_config *config, const char *js
 		goto out;
 	}
 
+#if DEBUG_ENABLE
 	auth_config_dump(config);
+#endif
+
 	ret = 0;
 out:
 	if (js != NULL) 
@@ -937,8 +955,8 @@ static void display_auth_ip_rule_objs(struct auth_ioc_arg *ioc_obj)
 		AUTH_DEBUG("RULE_NC_IPRANGE:%d\n", ip_rule->nc_ip_range);
 		ranges = (struct ip_range*)((void*)ip_rule + sizeof(struct ioc_auth_ip_rule));
 		for (j = 0; j < ip_rule->nc_ip_range; j++) {
-			AUTH_DEBUG("ip range %d: ["NIPQUAD_FMT","NIPQUAD_FMT"].\n", j, 
-					NIPQUAD(ranges[j].min), NIPQUAD(ranges[j].max));
+			AUTH_DEBUG("ip range %d: ["IPQUAD_FMT","IPQUAD_FMT"].\n", j, 
+					HIPQUAD(ranges[j].min), HIPQUAD(ranges[j].max));
 		}
 		offset += ip_rule->nc_ip_range * sizeof(struct ip_range) + sizeof(struct ioc_auth_ip_rule);
 		AUTH_DEBUG("****************************************\n\n");
@@ -1064,8 +1082,9 @@ int update_auth_ip_rules_to_kernel(struct auth_ip_rule *rules, uint16_t nc_rule)
  			ioc_obj = packed_ioc_obj;
  		}
  	}
-
+ #if DEBUG_ENABLE
  	display_auth_ip_rule_objs(packed_ioc_obj);
+ #endif
 	if (ioctl(s_dev_fd, SIOCSAUTHRULES, packed_ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of update ip rules failed.\n");
 	}
@@ -1150,7 +1169,9 @@ int update_auth_if_infos_to_kernel(struct auth_if_info *if_infos, uint16_t nc_in
 			}
 		}
 	}
+#if DEBUG_ENABLE
 	display_if_info_ioc_obj(ioc_obj);
+#endif
 	if (ioctl(s_dev_fd, SIOCSIFINFO, ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of set auth if_infos failed.\n");
 		ret = UGW_FAILED;
@@ -1175,9 +1196,10 @@ static void display_auth_options_ioc_obj(struct auth_ioc_arg *ioc_obj)
 	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
 	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
 	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
-	AUTH_DEBUG("USER_CHECK_INTVAL:%d\n", option->user_check_intval);
+	AUTH_DEBUG("USER_CHECK_INTVAL:%u\n", option->user_check_intval);
 	AUTH_DEBUG("REDIRECT_URL:%s\n", option->redirect_url);
 	AUTH_DEBUG("REDIRECT_TITLE:%s\n", option->redirect_title);
+	AUTH_DEBUG("BYPASS_ENABLE:%u\n", option->bypass_enable);
 	AUTH_DEBUG("***********************************************\n\n");
 }
 
@@ -1187,7 +1209,7 @@ static int auth_options_valid_check(uint32_t intval, const char *url, const char
 }
 
 
-int set_auth_options(struct auth_ioc_arg *arg, uint32_t intval, const char *url, const char *title)
+int set_auth_options(struct auth_ioc_arg *arg, uint32_t intval, const char *url, const char *title, uint32_t bypass)
 {
 	assert(arg);
 	struct ioc_auth_options *option = NULL;
@@ -1199,6 +1221,7 @@ int set_auth_options(struct auth_ioc_arg *arg, uint32_t intval, const char *url,
 	option->user_check_intval = intval;
 	safe_strncpy(option->redirect_url, url, REDIRECT_URL_MAX);
 	safe_strncpy(option->redirect_title, title, REDIRECT_TITLE_MAX);
+	option->bypass_enable = bypass;
 	return UGW_SUCCESS;
 }
 
@@ -1214,11 +1237,13 @@ int update_auth_options_to_kernel(struct auth_options *option)
 		goto OUT;
 	}
 	if (set_auth_options(ioc_obj, option->user_check_intval, option->redirect_url, 
-			option->redirect_title) == UGW_FAILED) {
+			option->redirect_title, option->bypass_enable) == UGW_FAILED) {
 		ret =  UGW_FAILED;
 		goto OUT;
 	}
+#if DEBUG_ENABLE
 	display_auth_options_ioc_obj(ioc_obj);
+#endif
 	if (ioctl(s_dev_fd, SIOCSAUTHOPTIONS, ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of set auth options failed.\n");
 		ret = UGW_FAILED;
@@ -1302,7 +1327,9 @@ int update_user_stat_to_kernel(struct user_info *users, uint16_t nc_user)
 			break;
 		}
 	}
+#if DEBUG_ENABLE
 	display_update_user_stat_ioc_obj(ioc_obj);
+#endif
 	if (ioctl(s_dev_fd, SIOCSUSRSTAT, ioc_obj) != 0) {
 		AUTH_ERROR("ioctl of set user status failed.\n");
 	}
@@ -1373,8 +1400,8 @@ static void print_user_info(struct user_stat_assist *assist, struct user_info *u
 	int i = 0;
 	uint32_t user_ip = 0;
 	for (i = 0; i < assist->nc_user; i++) {
-		printf("ip:"NIPQUAD_FMT" st:%u jf:%llu mac:%02x:%02x:%02x:%02x:%02x:%02x\n", 
-				NIPQUAD(users[i].ipv4), users[i].status, users[i].jf,
+		printf("ip:"IPQUAD_FMT" st:%u jf:%llu mac:%02x:%02x:%02x:%02x:%02x:%02x\n", 
+				HIPQUAD(users[i].ipv4), users[i].status, users[i].jf,
 				users[i].mac[0], users[i].mac[1], users[i].mac[2],
 				users[i].mac[3], users[i].mac[4], users[i].mac[5]);
 	}
@@ -1428,6 +1455,9 @@ OUT:
 }
 
 
+/*
+*Notice, All number data between user space and kernel are host order.
+*/
 static int auth_config_to_kernel(struct auth_global_config *config)
 {
 	int i;
