@@ -870,9 +870,14 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 	header_len = sizeof(struct auth_ioc_arg);
 	switch (arg_type) {
 		case AUTH_RULE:
-			unit_len = sizeof(struct ip_range) * nc_element;
-			sub_header = sizeof(struct ioc_auth_ip_rule);
-			real_nc = 1;
+			if (nc_element) {
+				sub_header = sizeof(struct ioc_auth_ip_rule);
+				unit_len = sizeof(struct ip_range) * nc_element;
+				real_nc = 1;
+			}
+			else {
+				unit_len = sizeof(struct ip_range);
+			}
 			break;
 
 		case AUTH_OPTION:
@@ -1046,40 +1051,46 @@ NO_MEM:
 
 int update_auth_ip_rules_to_kernel(struct auth_ip_rule *rules, uint16_t nc_rule)
 {
-	assert(rules);
-
 	int i = 0, ret = UGW_SUCCESS;
  	struct auth_ioc_arg *ioc_obj = NULL, *packed_ioc_obj = NULL, **ioc_obj_arr = NULL;
  	struct ioc_auth_ip_rule *ip_rule = NULL;
 
- 	ioc_obj_arr = AUTH_NEW_N(nc_rule, struct auth_ioc_arg*);
- 	if (ioc_obj_arr == NULL) {
- 		goto NO_MEM;
- 	}
+ 	if (rules && nc_rule) {
+	 	ioc_obj_arr = AUTH_NEW_N(nc_rule, struct auth_ioc_arg*);
+	 	if (ioc_obj_arr == NULL) {
+	 		goto NO_MEM;
+	 	}
 
- 	for (i = 0; i < nc_rule; i++) {
- 		ioc_obj_arr[i] = NULL;
- 	}
+	 	for (i = 0; i < nc_rule; i++) {
+	 		ioc_obj_arr[i] = NULL;
+	 	}
 
- 	for (i = 0; i < nc_rule; i++) {
-		ioc_obj_arr[i] = create_ioc_obj(AUTH_RULE,  rules[i].nc_ip_range);
-		if (ioc_obj_arr[i] == NULL) {
-			goto NO_MEM;
-		}
-		set_auth_ip_ranges(ioc_obj_arr[i], &rules[i]);
+	 	for (i = 0; i < nc_rule; i++) {
+			ioc_obj_arr[i] = create_ioc_obj(AUTH_RULE,  rules[i].nc_ip_range);
+			if (ioc_obj_arr[i] == NULL) {
+				goto NO_MEM;
+			}
+			set_auth_ip_ranges(ioc_obj_arr[i], &rules[i]);
+	 	}
+	 	for (i = 0; i < nc_rule; i++) {
+	 		if (packed_ioc_obj) {
+	 			packed_ioc_obj = pack_auth_ip_rule_objs(2, ioc_obj, ioc_obj_arr[i]);
+	 			if (packed_ioc_obj == NULL) {
+	 				goto NO_MEM;
+	 			}
+	 			ioc_obj_arr[i] = NULL;
+	 			ioc_obj = packed_ioc_obj;
+	 		}
+	 		else {
+	 			packed_ioc_obj = ioc_obj_arr[i];	/*ioc_obj_arr[0]*/
+	 			ioc_obj = packed_ioc_obj;
+	 		}
+	 	}
  	}
- 	for (i = 0; i < nc_rule; i++) {
- 		if (packed_ioc_obj) {
- 			packed_ioc_obj = pack_auth_ip_rule_objs(2, ioc_obj, ioc_obj_arr[i]);
- 			if (packed_ioc_obj == NULL) {
- 				goto NO_MEM;
- 			}
- 			ioc_obj_arr[i] = NULL;
- 			ioc_obj = packed_ioc_obj;
- 		}
- 		else {
- 			packed_ioc_obj = ioc_obj_arr[i];	/*ioc_obj_arr[0]*/
- 			ioc_obj = packed_ioc_obj;
+ 	else {
+ 		packed_ioc_obj = create_ioc_obj(AUTH_RULE, 0);
+ 		if (packed_ioc_obj == NULL) {
+ 			goto NO_MEM;
  		}
  	}
  #if DEBUG_ENABLE
