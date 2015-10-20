@@ -99,7 +99,8 @@ struct user_info {
 	uint32_t status;
 	uint64_t jf;
 	unsigned char mac[ETH_ALEN];
-	unsigned char reserved[2];
+	uint16_t auth_type;
+	//unsigned char reserved[2];
 };
 #pragma pack()
 
