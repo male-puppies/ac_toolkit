@@ -65,6 +65,7 @@ struct auth_ip_rule
 	uint32_t 	type;
 	uint32_t	enable;
 	uint32_t 	priority;
+	uint32_t 	timeout;
 	struct ip_range *ip_ranges;
 	uint32_t 	nc_ip_range;
 };
@@ -74,6 +75,7 @@ struct ioc_auth_ip_rule {
 	uint32_t 	type;
 	uint32_t	enable;
 	uint32_t 	priority;
+	uint32_t 	timeout;
 	uint32_t 	nc_ip_range;
 	/*struct ip_range *ip_ranges*/
 };

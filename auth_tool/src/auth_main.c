@@ -458,6 +458,14 @@ static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 		goto fail;
 	}
 
+	if (auth_json_integer_map(&rule->timeout, 
+		nx_json_get(js, "Timeout"),  
+		"config.AuthPolicy[n].timeout",
+		0, 65535) != 0)
+	{
+		goto fail;
+	}
+
 	if (auth_json_integer_map(&rule->enable, 
 		nx_json_get(js, "Enable"),  
 		"config.AuthPolicy[n].Enable",
@@ -957,6 +965,7 @@ static void display_auth_ip_rule_objs(struct auth_ioc_arg *ioc_obj)
 		AUTH_DEBUG("RULE_TYPE:%d\n", ip_rule->type);
 		AUTH_DEBUG("RULE_ENABLE:%d\n", ip_rule->enable);
 		AUTH_DEBUG("RULE_PRIORITY:%d\n", ip_rule->priority);
+		AUTH_DEBUG("RULE_TIMEOUT:%d\n", ip_rule->timeout);
 		AUTH_DEBUG("RULE_NC_IPRANGE:%d\n", ip_rule->nc_ip_range);
 		ranges = (struct ip_range*)((void*)ip_rule + sizeof(struct ioc_auth_ip_rule));
 		for (j = 0; j < ip_rule->nc_ip_range; j++) {
@@ -991,6 +1000,7 @@ static int set_auth_ip_ranges(struct auth_ioc_arg *arg, struct auth_ip_rule *ip_
 	ioc_ip_rule->type = ip_rule->type;
 	ioc_ip_rule->enable = ip_rule->enable;
 	ioc_ip_rule->priority = ip_rule->priority;
+	ioc_ip_rule->timeout = ip_rule->timeout;
 	ioc_ip_rule->nc_ip_range = ip_rule->nc_ip_range;
 	return UGW_SUCCESS;
 }
