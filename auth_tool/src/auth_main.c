@@ -378,6 +378,54 @@ fail:
 }
 
 
+static void auth_url_cleanup(struct auth_url_info *url_info)
+{
+	free(url_info->url);
+	url_info->url = NULL;
+	memset(url_info, 0, sizeof(struct auth_url_info));
+}
+
+
+static int auth_url_init(struct auth_url_info *url_info, const nx_json *js)
+{
+	memset(url_info, 0, sizeof(struct auth_url_info));
+
+	if (auth_json_string_map(&url_info->url,
+			nx_json_get(js, "url"),
+			"config.urlInfos[n].url",
+			BYPASS_RUL_LEN) != 0) 
+	{
+		goto fail;
+	}
+
+	if (auth_json_integer_map(&url_info->action, 
+		nx_json_get(js, "action"),  
+		"config.urlInfos[n].action",
+		0, 1) != 0)
+	{
+		goto fail;
+	}
+
+	return 0;
+
+fail:
+	auth_url_cleanup(url_info);
+	return -1;
+}
+
+static int do_auth_url_parsing(struct auth_url_info **url_infos, uint32_t *nc_url, const nx_json *js)
+{
+	if (auth_json_array_map(url_infos, nc_url, js, "config.urlInfos", AUTH_RULE_COUNT_MAX, 
+			struct auth_url_info, auth_url_init, auth_url_cleanup) != 0) 
+	{
+		goto fail;
+	}
+	return 0;
+fail:
+	return -1;
+}
+
+
 /***************************************ip_rule_parsing**************************************/
 static int auth_ip_range_init(struct ip_range *range, const nx_json *js)
 {
@@ -592,6 +640,18 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 		}
 	}
 
+
+	/*parse urls*/
+	js_elem = nx_json_get(js, "BypassUrl");
+	if (js_elem->type != NX_JSON_NULL) {
+		if (do_auth_url_parsing(&config->url_infos, &config->nc_url, js_elem) == UGW_SUCCESS) {
+			config->update_url_infos = 1;
+		}
+		else {
+			goto fail;
+		}
+	}
+
 	/*parse user status*/
 	js_elem = nx_json_get(js, "UpdateUserStatus");
 	if (js_elem->type != NX_JSON_NULL) {
@@ -645,6 +705,13 @@ static void auth_if_info_dump(struct auth_if_info *if_info)
 	AUTH_INFO("~~~~~~~~~ AUTH_INTERFACE END~~~~~~~~~\n");
 }
 
+static void auth_url_info_dump(struct auth_url_info *url_info)
+{
+	AUTH_INFO("~~~~~~~~~ AUTH_URL BEGIN~~~~~~~~~\n");
+	AUTH_INFO("BYPASS ACTION: %d.\n", url_info->action);
+	AUTH_INFO("BYPASS URL: %s.\n", url_info->url);
+	AUTH_INFO("~~~~~~~~~ AUTH_URL END~~~~~~~~~\n");
+}
 
 static void auth_option_dump(struct auth_options *option)
 {
@@ -688,11 +755,19 @@ static void auth_config_dump(struct auth_global_config *config)
 		}
 	}
 
+
+	if (config->update_url_infos) {
+		for (i = 0; i < config->nc_url; i++) {
+			auth_url_info_dump(&config->url_infos[i]);
+		}
+	}
+
 	if (config->update_user) {
 		for (i = 0; i < config->nc_user; i++) {
 			auth_user_status_dump(&config->users[i]);
 		}
 	}
+
 
 	if (config->get_all_user) {
 		AUTH_INFO("GetAllUser:%d.\n", config->get_all_user);
@@ -856,6 +931,10 @@ static int32_t ioc_obj_pars_check(enum ARG_TYPE_E arg_type, uint16_t *real_nc)
 			ret = UGW_SUCCESS;
 			break;
 
+		case BYPASS_URL_INFO:
+			ret = UGW_SUCCESS;
+			break;
+
 		default:
 			ret = UGW_FAILED;
 			break;
@@ -902,6 +981,10 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 
 		case NET_IF_INFO: 
 			unit_len = sizeof(struct ioc_auth_if_info);
+			break;
+
+		case BYPASS_URL_INFO:
+			unit_len = sizeof(struct ioc_auth_url_info);
 			break;
 
 		default:
@@ -1207,6 +1290,88 @@ OUT:
 }
 
 
+static void display_url_info_ioc_obj(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	int i = 0;
+	struct ioc_auth_url_info *url_info = 
+			(struct ioc_auth_url_info*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	AUTH_DEBUG("*************AUTH_OPTION IOC_OBJ***************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	for (i = 0; i < ioc_obj->num; i++) {
+		AUTH_DEBUG("bypass_action:%d\n", url_info[i].action);
+		AUTH_DEBUG("bypass_url:%s\n", url_info[i].url);
+	}
+	AUTH_DEBUG("***********************************************\n\n");
+}
+
+
+static int auth_url_info_valid_check(uint8_t action, const char *url)
+{
+	if (!url || strlen(url) >= BYPASS_RUL_LEN) {
+		AUTH_ERROR("URL INVALID.\n");
+		return UGW_FAILED;
+	}
+	return UGW_SUCCESS;
+}
+
+
+int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action, const char *url)
+{
+	assert(arg);
+	struct ioc_auth_url_info *url_info = NULL;
+	if (auth_url_info_valid_check(action, url) == UGW_FAILED) {
+		return UGW_FAILED;
+	}
+	if (obj_id >= arg->num) {
+		AUTH_ERROR("OBJ_ID(%u) >= OBJ_COUNT(%u) out of range.\n");
+		return UGW_FAILED;
+	}
+	url_info = (struct ioc_auth_url_info*)((void*)arg + sizeof(struct auth_ioc_arg));
+	url_info[obj_id].action = action;
+	safe_strncpy(url_info[obj_id].url, url, BYPASS_RUL_LEN);
+	return UGW_SUCCESS;
+}
+
+
+int update_auth_url_infos_to_kernel(struct auth_url_info *url_infos, uint16_t nc_url)
+{
+	int i = 0, ret = UGW_SUCCESS;
+
+	struct auth_ioc_arg *ioc_obj = create_ioc_obj(BYPASS_URL_INFO, nc_url);
+	if (ioc_obj == NULL) {
+		AUTH_ERROR("No mem.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}	
+	if (nc_url != 0)
+	{
+		for (i = 0; url_infos && i < nc_url; i++) {
+			if (set_auth_url_info(ioc_obj, i, url_infos[i].action, url_infos[i].url) == UGW_FAILED) {
+				ret = UGW_FAILED;
+				goto OUT;
+			}
+		}
+	}
+#if DEBUG_ENABLE
+	display_url_info_ioc_obj(ioc_obj);
+#endif
+	if (ioctl(s_dev_fd, SIOCSAUTHURLS, ioc_obj) != 0) {
+		AUTH_ERROR("ioctl of set auth if_infos failed.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	return ret;
+}
+
+
 /*****************************************UPDATE_AUTH_OPTIONS*******************************/
 static void display_auth_options_ioc_obj(struct auth_ioc_arg *ioc_obj)
 {
@@ -1493,6 +1658,10 @@ static int auth_config_to_kernel(struct auth_global_config *config)
 
 	if (config->update_if_infos) {
 		update_auth_if_infos_to_kernel(config->if_infos, config->nc_if);
+	}
+
+	if (config->update_url_infos) {
+		update_auth_url_infos_to_kernel(config->url_infos, config->nc_url);
 	}
 
 	if (config->update_user) {

@@ -26,6 +26,8 @@
 #define SIOCSUSRSTAT		0x102	/*set usr status*/
 #define SIOCGUSRSTAT		0x103	/*get usr status*/
 #define SIOCSIFINFO			0x104	/*set network interface*/
+#define SIOCSAUTHURLS       0X105   /*set bypass url*/
+#define SIOCSDEBUGOPTIONS	0x106	/*set debug options*/
 
 #define ETH_ALEN				6
 
@@ -86,6 +88,12 @@ struct auth_if_info {
 	char	*if_name;
 };
 
+/*url info*/
+struct auth_url_info {
+	uint32_t action;
+	char	*url;
+};
+
 /*global auth options*/
 struct auth_options
 {
@@ -118,6 +126,10 @@ struct auth_global_config {
 	struct auth_if_info *if_infos;
 	uint32_t	nc_if;
 	uint8_t update_if_infos;
+
+	struct auth_url_info *url_infos;
+	uint32_t 	nc_url;
+	uint8_t update_url_infos;
 
 	struct user_info *users;
 	uint32_t nc_user;
@@ -182,6 +194,7 @@ enum ARG_TYPE_E {
 	USER_GSTAT	= 2,
 	USER_SSTAT	= 3,
 	NET_IF_INFO	= 4,
+	BYPASS_URL_INFO = 5,
 	/*add new type here*/
 	INVALID_ARG_TYPE,
 };
@@ -228,6 +241,15 @@ struct ioc_auth_if_info {
 	uint8_t 		type;
 	unsigned char 	if_name[IF_NAME_MAX];
 };
+
+
+/*url info*/
+#define BYPASS_RUL_LEN 	64
+struct ioc_auth_url_info {
+	uint8_t 		action;
+	unsigned char 	url[BYPASS_RUL_LEN];
+};
+
 
 /*ioctl cmd args*/
 struct auth_ioc_arg {
