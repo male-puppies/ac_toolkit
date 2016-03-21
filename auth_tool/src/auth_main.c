@@ -380,8 +380,10 @@ fail:
 
 static void auth_url_cleanup(struct auth_url_info *url_info)
 {
-	free(url_info->url);
-	url_info->url = NULL;
+	free(url_info->uri);
+	free(url_info->host);
+	url_info->uri = NULL;
+	url_info->host = NULL;
 	memset(url_info, 0, sizeof(struct auth_url_info));
 }
 
@@ -390,10 +392,18 @@ static int auth_url_init(struct auth_url_info *url_info, const nx_json *js)
 {
 	memset(url_info, 0, sizeof(struct auth_url_info));
 
-	if (auth_json_string_map(&url_info->url,
-			nx_json_get(js, "url"),
-			"config.urlInfos[n].url",
-			BYPASS_RUL_LEN) != 0) 
+	if (auth_json_string_map(&url_info->uri,
+			nx_json_get(js, "uri"),
+			"config.urlInfos[n].uri",
+			BYPASS_URI_LEN) != 0) 
+	{
+		goto fail;
+	}
+
+	if (auth_json_string_map(&url_info->host,
+			nx_json_get(js, "host"),
+			"config.urlInfos[n].host",
+			BYPASS_HOST_LEN) != 0) 
 	{
 		goto fail;
 	}
@@ -709,7 +719,8 @@ static void auth_url_info_dump(struct auth_url_info *url_info)
 {
 	AUTH_INFO("~~~~~~~~~ AUTH_URL BEGIN~~~~~~~~~\n");
 	AUTH_INFO("BYPASS ACTION: %d.\n", url_info->action);
-	AUTH_INFO("BYPASS URL: %s.\n", url_info->url);
+	AUTH_INFO("BYPASS URI: %s.\n", url_info->uri);
+	AUTH_INFO("BYPASS HOST: %s.\n", url_info->host);
 	AUTH_INFO("~~~~~~~~~ AUTH_URL END~~~~~~~~~\n");
 }
 
@@ -1302,27 +1313,34 @@ static void display_url_info_ioc_obj(struct auth_ioc_arg *ioc_obj)
 	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
 	for (i = 0; i < ioc_obj->num; i++) {
 		AUTH_DEBUG("bypass_action:%d\n", url_info[i].action);
-		AUTH_DEBUG("bypass_url:%s\n", url_info[i].url);
+		AUTH_DEBUG("bypass_uri:%s\n", url_info[i].uri);
+		AUTH_DEBUG("bypass_uri_len:%d\n", url_info[i].uri_len);
+		AUTH_DEBUG("bypass_host:%s\n", url_info[i].host);
+		AUTH_DEBUG("bypass_host_len:%d\n", url_info[i].host_len);
 	}
 	AUTH_DEBUG("***********************************************\n\n");
 }
 
 
-static int auth_url_info_valid_check(uint8_t action, const char *url)
+static int auth_url_info_valid_check(uint8_t action, const char *uri, const char *host)
 {
-	if (!url || strlen(url) >= BYPASS_RUL_LEN) {
-		AUTH_ERROR("URL INVALID.\n");
+	if (!uri || strlen(uri) >= BYPASS_URI_LEN) {
+		AUTH_ERROR("URI INVALID.\n");
+		return UGW_FAILED;
+	}
+	if (!host || strlen(host) >= BYPASS_HOST_LEN) {
+		AUTH_ERROR("HOST INVALID.\n");
 		return UGW_FAILED;
 	}
 	return UGW_SUCCESS;
 }
 
 
-int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action, const char *url)
+int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action, const char *uri, const char *host)
 {
 	assert(arg);
 	struct ioc_auth_url_info *url_info = NULL;
-	if (auth_url_info_valid_check(action, url) == UGW_FAILED) {
+	if (auth_url_info_valid_check(action, uri, host) == UGW_FAILED) {
 		return UGW_FAILED;
 	}
 	if (obj_id >= arg->num) {
@@ -1331,7 +1349,10 @@ int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action,
 	}
 	url_info = (struct ioc_auth_url_info*)((void*)arg + sizeof(struct auth_ioc_arg));
 	url_info[obj_id].action = action;
-	safe_strncpy(url_info[obj_id].url, url, BYPASS_RUL_LEN);
+	safe_strncpy(url_info[obj_id].uri, uri, BYPASS_URI_LEN);
+	safe_strncpy(url_info[obj_id].host, host, BYPASS_HOST_LEN);
+	url_info[obj_id].uri_len = strlen(uri);
+	url_info[obj_id].host_len = strlen(host);
 	return UGW_SUCCESS;
 }
 
@@ -1349,7 +1370,7 @@ int update_auth_url_infos_to_kernel(struct auth_url_info *url_infos, uint16_t nc
 	if (nc_url != 0)
 	{
 		for (i = 0; url_infos && i < nc_url; i++) {
-			if (set_auth_url_info(ioc_obj, i, url_infos[i].action, url_infos[i].url) == UGW_FAILED) {
+			if (set_auth_url_info(ioc_obj, i, url_infos[i].action, url_infos[i].uri, url_infos[i].host) == UGW_FAILED) {
 				ret = UGW_FAILED;
 				goto OUT;
 			}

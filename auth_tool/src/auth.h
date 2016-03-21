@@ -91,7 +91,8 @@ struct auth_if_info {
 /*url info*/
 struct auth_url_info {
 	uint32_t action;
-	char	*url;
+	char	*uri;
+	char 	*host;
 };
 
 /*global auth options*/
@@ -244,10 +245,14 @@ struct ioc_auth_if_info {
 
 
 /*url info*/
-#define BYPASS_RUL_LEN 	64
+#define BYPASS_URI_LEN 	64
+#define BYPASS_HOST_LEN 64
 struct ioc_auth_url_info {
 	uint8_t 		action;
-	unsigned char 	url[BYPASS_RUL_LEN];
+	uint8_t 		uri_len;
+	uint8_t 		host_len;
+	unsigned char 	uri[BYPASS_URI_LEN];
+	unsigned char 	host[BYPASS_HOST_LEN];
 };
 
 
