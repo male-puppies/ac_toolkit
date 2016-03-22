@@ -180,7 +180,7 @@ enum IP_RULE_TYPE_E {
 // 	uint32_t	min;	/*min ip*/
 // 	uint32_t 	max;	/*max ip*/
 // };
-
+#pragma pack(4)
 /*auth options*/
 struct ioc_auth_options {
 	uint32_t	user_check_intval;	/*unit: seconds*/
@@ -273,5 +273,5 @@ struct auth_ioc_arg {
 // 	uint32_t 	nc_ip_range;
 // 	/*struct ip_range *ip_ranges*/
 // };
-
+#pragma pack()
 #endif
