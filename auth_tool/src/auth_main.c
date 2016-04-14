@@ -411,7 +411,15 @@ static int auth_url_init(struct auth_url_info *url_info, const nx_json *js)
 	if (auth_json_integer_map(&url_info->action, 
 		nx_json_get(js, "action"),  
 		"config.urlInfos[n].action",
-		0, 1) != 0)
+		0, 128) != 0)
+	{
+		goto fail;
+	}
+
+	if (auth_json_integer_map(&url_info->step, 
+		nx_json_get(js, "step"),  
+		"config.urlInfos[n].step",
+		0, 128) != 0)
 	{
 		goto fail;
 	}
@@ -527,7 +535,7 @@ static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 	if (auth_json_integer_map(&rule->enable, 
 		nx_json_get(js, "Enable"),  
 		"config.AuthPolicy[n].Enable",
-		0, 1) != 0)
+		0, 128) != 0)
 	{
 		goto fail;
 	}
@@ -537,6 +545,14 @@ static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 			"config.AuthPolicy[n].IpRange",
 			AUTH_IP_RANGE_COUNT_MAX,
 			struct ip_range, auth_ip_range_init, NULL) != 0) 
+	{
+		goto fail;
+	}
+
+	if (auth_json_integer_map(&rule->step, 
+		nx_json_get(js, "Step"),  
+		"config.AuthPolicy[n].Step",
+		0, 128) != 0)
 	{
 		goto fail;
 	}
@@ -697,6 +713,8 @@ static void auth_ip_rule_dump(struct auth_ip_rule *rule)
 	AUTH_INFO("~~~~~~~~~ AUTH RULE [%s] ~~~~~~~~~\n", rule->name);
 	AUTH_INFO("type: %u.\n", rule->type);
 	AUTH_INFO("enable: %u.\n", rule->enable);
+	AUTH_INFO("timeout: %u.\n", rule->timeout);
+	AUTH_INFO("step: %u.\n", rule->step);
 	AUTH_INFO("ip range count: %u.\n", rule->nc_ip_range);
 	for (i = 0; i < rule->nc_ip_range; i++)
 	{
@@ -721,6 +739,7 @@ static void auth_url_info_dump(struct auth_url_info *url_info)
 	AUTH_INFO("BYPASS ACTION: %d.\n", url_info->action);
 	AUTH_INFO("BYPASS URI: %s.\n", url_info->uri);
 	AUTH_INFO("BYPASS HOST: %s.\n", url_info->host);
+	AUTH_INFO("BYPASS STEP: %d.\n", url_info->step);
 	AUTH_INFO("~~~~~~~~~ AUTH_URL END~~~~~~~~~\n");
 }
 
@@ -1061,6 +1080,7 @@ static void display_auth_ip_rule_objs(struct auth_ioc_arg *ioc_obj)
 		AUTH_DEBUG("RULE_PRIORITY:%d\n", ip_rule->priority);
 		AUTH_DEBUG("RULE_TIMEOUT:%d\n", ip_rule->timeout);
 		AUTH_DEBUG("RULE_NC_IPRANGE:%d\n", ip_rule->nc_ip_range);
+		AUTH_DEBUG("RULE_STEP:%d\n", ip_rule->step);
 		ranges = (struct ip_range*)((void*)ip_rule + sizeof(struct ioc_auth_ip_rule));
 		for (j = 0; j < ip_rule->nc_ip_range; j++) {
 			AUTH_DEBUG("ip range %d: ["IPQUAD_FMT","IPQUAD_FMT"].\n", j, 
@@ -1095,6 +1115,7 @@ static int set_auth_ip_ranges(struct auth_ioc_arg *arg, struct auth_ip_rule *ip_
 	ioc_ip_rule->enable = ip_rule->enable;
 	ioc_ip_rule->priority = ip_rule->priority;
 	ioc_ip_rule->timeout = ip_rule->timeout;
+	ioc_ip_rule->step = ip_rule->step;
 	ioc_ip_rule->nc_ip_range = ip_rule->nc_ip_range;
 	return UGW_SUCCESS;
 }
@@ -1317,6 +1338,7 @@ static void display_url_info_ioc_obj(struct auth_ioc_arg *ioc_obj)
 		AUTH_DEBUG("bypass_uri_len:%d\n", url_info[i].uri_len);
 		AUTH_DEBUG("bypass_host:%s\n", url_info[i].host);
 		AUTH_DEBUG("bypass_host_len:%d\n", url_info[i].host_len);
+		AUTH_DEBUG("bypass_step:%d\n", url_info[i].step);
 	}
 	AUTH_DEBUG("***********************************************\n\n");
 }
@@ -1336,7 +1358,7 @@ static int auth_url_info_valid_check(uint8_t action, const char *uri, const char
 }
 
 
-int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action, const char *uri, const char *host)
+int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action, const char *uri, const char *host, uint8_t step)
 {
 	assert(arg);
 	struct ioc_auth_url_info *url_info = NULL;
@@ -1353,6 +1375,7 @@ int set_auth_url_info(struct auth_ioc_arg *arg, uint16_t obj_id, uint8_t action,
 	safe_strncpy(url_info[obj_id].host, host, BYPASS_HOST_LEN);
 	url_info[obj_id].uri_len = strlen(uri);
 	url_info[obj_id].host_len = strlen(host);
+	url_info[obj_id].step = step;
 	return UGW_SUCCESS;
 }
 
@@ -1370,7 +1393,7 @@ int update_auth_url_infos_to_kernel(struct auth_url_info *url_infos, uint16_t nc
 	if (nc_url != 0)
 	{
 		for (i = 0; url_infos && i < nc_url; i++) {
-			if (set_auth_url_info(ioc_obj, i, url_infos[i].action, url_infos[i].uri, url_infos[i].host) == UGW_FAILED) {
+			if (set_auth_url_info(ioc_obj, i, url_infos[i].action, url_infos[i].uri, url_infos[i].host, url_infos[i].step) == UGW_FAILED) {
 				ret = UGW_FAILED;
 				goto OUT;
 			}
