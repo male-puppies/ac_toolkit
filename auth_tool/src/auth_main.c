@@ -4,8 +4,33 @@
 #define DRV_VERSION	"0.1.1"
 #define DRV_DESC	"auth driver"
 #define AUTH_USER_INFO_DEV	("/dev/auth_user_info")
+#define C_BIG_ENDIAN 0
+#define C_LITTLE_ENDIAN 1
 
 static int s_dev_fd = -1;
+static int host_endian = 0;
+
+
+static void PRINT_IPV4(uint32_t ipv4) {
+	if (host_endian == C_BIG_ENDIAN) {
+		printf(IPQUAD_FMT, NIPQUAD(ipv4));
+	}
+	else {
+		printf(IPQUAD_FMT, HIPQUAD(ipv4));
+	}
+}
+
+
+static void fetch_endian()
+{
+	uint16_t num = 0x1122;
+	char low = ((char*)&num)[0]; 
+	if (low == 0x22 ) {
+		host_endian = C_LITTLE_ENDIAN;
+	} else {
+		host_endian = C_BIG_ENDIAN;
+	}
+}
 
 
 /**************************CONFIG_PARSING*********************************/
@@ -277,6 +302,7 @@ static void auth_update_user_cleanup(struct user_info *user)
 static int auth_update_user_init(struct user_info *user, const nx_json *js)
 {
 	char *mac_str = NULL;
+	uint32_t integer = 0;
 	memset(user, 0, sizeof(struct user_info));
 	if (auth_json_string_map(&mac_str,
 			nx_json_get(js, "UserMac"),
@@ -291,14 +317,15 @@ static int auth_update_user_init(struct user_info *user, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_json_integer_map(&user->status, 
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "Action"),  
 		"config.UpdateUserStatus[n].Action",
 		0, 1) != 0)
 	{
 		goto fail;
 	}
-
+	user->status = integer;
+	
 	if (mac_str) 
 	{
 		free(mac_str);
@@ -339,6 +366,7 @@ static void auth_interface_cleanup(struct auth_if_info *if_info)
 
 static int auth_interface_init(struct auth_if_info *if_info, const nx_json *js)
 {
+	uint32_t integer = 0;
 	memset(if_info, 0, sizeof(struct auth_if_info));
 
 	if (auth_json_string_map(&if_info->if_name,
@@ -349,14 +377,15 @@ static int auth_interface_init(struct auth_if_info *if_info, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_json_integer_map(&if_info->type, 
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "InterfaceType"),  
 		"config.InterfaceInfo[n].InterfaceType",
 		0, NET_IF_TYPE_NUM) != 0)
 	{
 		goto fail;
 	}
-
+	if_info->type = integer;
+	
 	return 0;
 
 fail:
@@ -390,6 +419,7 @@ static void auth_url_cleanup(struct auth_url_info *url_info)
 
 static int auth_url_init(struct auth_url_info *url_info, const nx_json *js)
 {
+	uint32_t integer = 0;
 	memset(url_info, 0, sizeof(struct auth_url_info));
 
 	if (auth_json_string_map(&url_info->uri,
@@ -407,22 +437,24 @@ static int auth_url_init(struct auth_url_info *url_info, const nx_json *js)
 	{
 		goto fail;
 	}
-
-	if (auth_json_integer_map(&url_info->action, 
+	
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "action"),  
 		"config.urlInfos[n].action",
 		0, 128) != 0)
 	{
 		goto fail;
 	}
-
-	if (auth_json_integer_map(&url_info->step, 
+	url_info->action = integer;
+	
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "step"),  
 		"config.urlInfos[n].step",
 		0, 128) != 0)
 	{
 		goto fail;
 	}
+	url_info->step = integer;
 
 	return 0;
 
@@ -497,8 +529,8 @@ static void auth_ip_rule_cleanup(struct auth_ip_rule *rule)
 
 static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 {
+	uint32_t integer = 0;
 	memset(rule, 0, sizeof(struct auth_ip_rule));
-
 
 	if (auth_json_string_map(&rule->name,
 			nx_json_get(js, "AuthPolicyName"),
@@ -508,37 +540,41 @@ static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_json_integer_map(&rule->type, 
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "AuthType"),  
 		"config.AuthPolicy[n].AuthType",
 		0, IP_RULE_TYPE_NUM) != 0)
 	{
 		goto fail;
 	}
-
-	if (auth_json_integer_map(&rule->priority, 
+	rule->type = integer;
+	
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "Priority"),  
 		"config.AuthPolicy[n].Priority",
 		0, AUTH_IP_RULE_MAX_PRIORITY) != 0)
 	{
 		goto fail;
 	}
-
-	if (auth_json_integer_map(&rule->timeout, 
+	rule->priority = integer;
+	
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "Timeout"),  
 		"config.AuthPolicy[n].timeout",
 		0, 65535) != 0)
 	{
 		goto fail;
 	}
-
-	if (auth_json_integer_map(&rule->enable, 
+	rule->timeout = integer;
+	
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "Enable"),  
 		"config.AuthPolicy[n].Enable",
 		0, 128) != 0)
 	{
 		goto fail;
 	}
+	rule->enable = integer;
 
 	if (auth_json_array_map(&rule->ip_ranges, &rule->nc_ip_range,
 			nx_json_get(js, "IpRange"),
@@ -549,14 +585,15 @@ static int auth_ip_rule_init(struct auth_ip_rule *rule, const nx_json *js)
 		goto fail;
 	}
 
-	if (auth_json_integer_map(&rule->step, 
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "Step"),  
 		"config.AuthPolicy[n].Step",
 		0, 128) != 0)
 	{
 		goto fail;
 	}
-
+	rule->step = integer;
+	
 	return 0;
 
 fail:
@@ -581,16 +618,18 @@ fail:
 /***************************************auth_option_parsing**************************************/
 static int do_auth_option_parsing(struct auth_options *auth_option, const nx_json *js)
 {
+	uint32_t  integer = 0;
 	memset(auth_option, 0, sizeof(struct auth_options));
 
-	if (auth_json_integer_map(&auth_option->user_check_intval, 
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "CheckOffline"),  
 		"config.GlobaleAuthOption.CheckOffline",
 		USR_CHECK_INTVAL_MIN, USR_CHECK_INTVAL_MAX) != 0)
 	{
 		goto fail;
 	}
-
+	auth_option->user_check_intval = integer;
+	
 	if (auth_json_string_map(&auth_option->redirect_url,
 		nx_json_get(js, "RedirectUrl"),
 		"config.GlobaleAuthOption.RedirectUrl",
@@ -607,14 +646,15 @@ static int do_auth_option_parsing(struct auth_options *auth_option, const nx_jso
 		goto fail;
 	}
 
-	if (auth_json_integer_map(&auth_option->bypass_enable, 
+	if (auth_json_integer_map(&integer, 
 		nx_json_get(js, "GlobalBypass"),  
 		"config.GlobaleAuthOption.GlobalBypass",
 		0, 1) != 0)
 	{
 		goto fail;
 	}
-
+	auth_option->bypass_enable = integer;
+	
 	return 0;
 fail:
 	return -1;
@@ -719,8 +759,11 @@ static void auth_ip_rule_dump(struct auth_ip_rule *rule)
 	for (i = 0; i < rule->nc_ip_range; i++)
 	{
 		struct ip_range *range = &rule->ip_ranges[i];
-		AUTH_INFO("ip range %d: ["IPQUAD_FMT","IPQUAD_FMT"].\n", i, 
-					HIPQUAD(range->min), HIPQUAD(range->max));
+		AUTH_DEBUG("ip range %d: [", i);
+		PRINT_IPV4(range->min);
+		printf(",");
+		PRINT_IPV4(range->max);
+		printf("]\n", i);
 	}
 }
 
@@ -1082,9 +1125,12 @@ static void display_auth_ip_rule_objs(struct auth_ioc_arg *ioc_obj)
 		AUTH_DEBUG("RULE_NC_IPRANGE:%d\n", ip_rule->nc_ip_range);
 		AUTH_DEBUG("RULE_STEP:%d\n", ip_rule->step);
 		ranges = (struct ip_range*)((void*)ip_rule + sizeof(struct ioc_auth_ip_rule));
-		for (j = 0; j < ip_rule->nc_ip_range; j++) {
-			AUTH_DEBUG("ip range %d: ["IPQUAD_FMT","IPQUAD_FMT"].\n", j, 
-					HIPQUAD(ranges[j].min), HIPQUAD(ranges[j].max));
+		for (j = 0; j < ip_rule->nc_ip_range; j++) {					
+			AUTH_DEBUG("ip range %d: [", j);
+			PRINT_IPV4(ranges[j].min);
+			printf(",");
+			PRINT_IPV4(ranges[j].max);
+			printf("]\n", i);
 		}
 		offset += ip_rule->nc_ip_range * sizeof(struct ip_range) + sizeof(struct ioc_auth_ip_rule);
 		AUTH_DEBUG("****************************************\n\n");
@@ -1630,8 +1676,10 @@ static void print_user_info(struct user_stat_assist *assist, struct user_info *u
 	int i = 0;
 	uint32_t user_ip = 0;
 	for (i = 0; i < assist->nc_user; i++) {
-		printf("ip:"IPQUAD_FMT" st:%u jf:%llu mac:%02x:%02x:%02x:%02x:%02x:%02x type:%u\n", 
-				HIPQUAD(users[i].ipv4), users[i].status, users[i].jf,
+		printf("ip:");
+		PRINT_IPV4(users[i].ipv4);
+		printf(" st:%u jf:%llu mac:%02x:%02x:%02x:%02x:%02x:%02x type:%u\n", 
+				users[i].status, users[i].jf,
 				users[i].mac[0], users[i].mac[1], users[i].mac[2],
 				users[i].mac[3], users[i].mac[4], users[i].mac[5], 
 				users[i].auth_type);
@@ -1771,7 +1819,7 @@ int main(int argc, char **argv)
 {
 	int ret = 0;
 	struct auth_global_config auth_config;	
-
+	fetch_endian();
 	auth_config_clear(&auth_config);
 	ret = auth_input_valid_check(argc, argv);
 	if (ret == UGW_FAILED) {
