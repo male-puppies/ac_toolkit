@@ -28,6 +28,7 @@
 #define SIOCSIFINFO			0x104	/*set network interface*/
 #define SIOCSAUTHURLS       0X105   /*set bypass url*/
 #define SIOCSDEBUGOPTIONS	0x106	/*set debug options*/
+#define SIOCSAUTHHOSTS 		0x107 	/*set bypass host*/
 
 #define ETH_ALEN				6
 
@@ -98,6 +99,11 @@ struct auth_url_info {
 	uint8_t step;
 };
 
+/*global white/black list*/
+struct auth_host_info {
+	char 	*host;
+};
+
 /*global auth options*/
 struct auth_options
 {
@@ -111,7 +117,7 @@ struct auth_options
 struct user_info {
 	uint32_t ipv4;
 	uint32_t status;
-	uint64_t jf;
+	unsigned long jf;
 	unsigned char mac[ETH_ALEN];
 	uint16_t auth_type;
 	//unsigned char reserved[2];
@@ -138,6 +144,10 @@ struct auth_global_config {
 	struct user_info *users;
 	uint32_t nc_user;
 	uint8_t update_user;
+
+	struct auth_host_info *host_infos;
+	uint32_t nc_host;
+	uint8_t update_host_infos;
 
 	uint8_t get_all_user;
 };
@@ -199,6 +209,7 @@ enum ARG_TYPE_E {
 	USER_SSTAT	= 3,
 	NET_IF_INFO	= 4,
 	BYPASS_URL_INFO = 5,
+	BYPASS_HOST_INFO = 6,
 	/*add new type here*/
 	INVALID_ARG_TYPE,
 };
@@ -227,7 +238,7 @@ struct user_stat_assist {
 	uint16_t nc_element;/*num count of mem space which unit is sizeof(user_info)*/
 	uint16_t nc_user;	/*real num of user*/
 	uint16_t nc_unused; /*more user need to get*/
-	uint64_t tm_stamp;
+	unsigned long tm_stamp;
 	unsigned long addr; /*user_space addr*/
 };
 /*"assit + user_info" kernel copy to user*/
@@ -257,6 +268,11 @@ struct ioc_auth_url_info {
 	unsigned char 	uri[BYPASS_URI_LEN];
 	unsigned char 	host[BYPASS_HOST_LEN];
 	uint8_t			step;
+};
+
+struct ioc_auth_host_info {
+	uint8_t 		host_len;
+	unsigned char 	host[BYPASS_HOST_LEN];
 };
 
 

@@ -476,6 +476,47 @@ fail:
 }
 
 
+static void auth_host_cleanup(struct auth_host_info *host_info)
+{
+	free(host_info->host);
+	host_info->host = NULL;
+	memset(host_info, 0, sizeof(struct auth_host_info));
+}
+
+
+static int auth_host_init(struct auth_host_info *host_info, const nx_json *js)
+{
+	uint32_t integer = 0;
+	memset(host_info, 0, sizeof(struct auth_host_info));
+
+	if (auth_json_string_map(&host_info->host,
+			nx_json_get(js, "host"),
+			"config.hostInfos[n].host",
+			BYPASS_HOST_LEN) != 0) 
+	{
+		goto fail;
+	}
+
+	return 0;
+
+fail:
+	auth_host_cleanup(host_info);
+	return -1;
+}
+
+static int do_auth_host_parsing(struct auth_host_info **host_infos, uint32_t *nc_host, const nx_json *js)
+{
+	if (auth_json_array_map(host_infos, nc_host, js, "config.hostInfos", AUTH_RULE_COUNT_MAX, 
+			struct auth_host_info, auth_host_init, auth_host_cleanup) != 0) 
+	{
+		goto fail;
+	}
+	return 0;
+fail:
+	return -1;
+}
+
+
 /***************************************ip_rule_parsing**************************************/
 static int auth_ip_range_init(struct ip_range *range, const nx_json *js)
 {
@@ -708,10 +749,21 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 
 
 	/*parse urls*/
-	js_elem = nx_json_get(js, "BypassUrl");
+	js_elem = nx_json_get(js, "WechatBypassUrl");
 	if (js_elem->type != NX_JSON_NULL) {
 		if (do_auth_url_parsing(&config->url_infos, &config->nc_url, js_elem) == UGW_SUCCESS) {
 			config->update_url_infos = 1;
+		}
+		else {
+			goto fail;
+		}
+	}
+
+
+	js_elem = nx_json_get(js, "BypassUrl");
+	if (js_elem->type != NX_JSON_NULL) {
+		if (do_auth_host_parsing(&config->host_infos, &config->nc_host, js_elem) == UGW_SUCCESS) {
+			config->update_host_infos = 1;
 		}
 		else {
 			goto fail;
@@ -786,6 +838,13 @@ static void auth_url_info_dump(struct auth_url_info *url_info)
 	AUTH_INFO("~~~~~~~~~ AUTH_URL END~~~~~~~~~\n");
 }
 
+static void auth_host_info_dump(struct auth_host_info *host_info)
+{
+	AUTH_INFO("~~~~~~~~~ AUTH_HOST BEGIN~~~~~~~~~\n");
+	AUTH_INFO("BYPASS HOST: %s.\n", host_info->host);
+	AUTH_INFO("~~~~~~~~~ AUTH_HOST END~~~~~~~~~\n");
+}
+
 static void auth_option_dump(struct auth_options *option)
 {
 	AUTH_INFO("~~~~~~~~~ AUTH OPTION BEGIN~~~~~~~~~\n");
@@ -832,6 +891,12 @@ static void auth_config_dump(struct auth_global_config *config)
 	if (config->update_url_infos) {
 		for (i = 0; i < config->nc_url; i++) {
 			auth_url_info_dump(&config->url_infos[i]);
+		}
+	}
+
+	if (config->update_host_infos) {
+		for (i = 0; i < config->nc_host; i++) {
+			auth_host_info_dump(&config->host_infos[i]);
 		}
 	}
 
@@ -1008,6 +1073,10 @@ static int32_t ioc_obj_pars_check(enum ARG_TYPE_E arg_type, uint16_t *real_nc)
 			ret = UGW_SUCCESS;
 			break;
 
+		case BYPASS_HOST_INFO:
+			ret = UGW_SUCCESS;
+			break;
+
 		default:
 			ret = UGW_FAILED;
 			break;
@@ -1058,6 +1127,10 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 
 		case BYPASS_URL_INFO:
 			unit_len = sizeof(struct ioc_auth_url_info);
+			break;
+
+		case BYPASS_HOST_INFO:
+			unit_len = sizeof(struct ioc_auth_host_info);
 			break;
 
 		default:
@@ -1449,7 +1522,89 @@ int update_auth_url_infos_to_kernel(struct auth_url_info *url_infos, uint16_t nc
 	display_url_info_ioc_obj(ioc_obj);
 #endif
 	if (ioctl(s_dev_fd, SIOCSAUTHURLS, ioc_obj) != 0) {
-		AUTH_ERROR("ioctl of set auth if_infos failed.\n");
+		AUTH_ERROR("ioctl of set auth url_infos failed.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	return ret;
+}
+
+
+static void display_host_info_ioc_obj(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	int i = 0;
+	struct ioc_auth_host_info *host_info = 
+			(struct ioc_auth_host_info*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	AUTH_DEBUG("*************AUTH_OPTION IOC_OBJ***************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	for (i = 0; i < ioc_obj->num; i++) {
+		AUTH_DEBUG("bypass_host:%s\n", host_info[i].host);
+		AUTH_DEBUG("bypass_host_len:%d\n", host_info[i].host_len);
+	}
+	AUTH_DEBUG("***********************************************\n\n");
+}
+
+
+static int auth_host_info_valid_check(const char *host)
+{
+	if (!host || strlen(host) >= BYPASS_HOST_LEN) {
+		AUTH_ERROR("HOST INVALID.\n");
+		return UGW_FAILED;
+	}
+	return UGW_SUCCESS;
+}
+
+
+int set_auth_host_info(struct auth_ioc_arg *arg, uint16_t obj_id, const char *host)
+{
+	assert(arg);
+	struct ioc_auth_host_info *host_info = NULL;
+	if (auth_host_info_valid_check(host) == UGW_FAILED) {
+		return UGW_FAILED;
+	}
+	if (obj_id >= arg->num) {
+		AUTH_ERROR("OBJ_ID(%u) >= OBJ_COUNT(%u) out of range.\n");
+		return UGW_FAILED;
+	}
+	host_info = (struct ioc_auth_host_info*)((void*)arg + sizeof(struct auth_ioc_arg));
+	safe_strncpy(host_info[obj_id].host, host, BYPASS_HOST_LEN);
+	host_info[obj_id].host_len = strlen(host);
+	return UGW_SUCCESS;
+}
+
+
+int update_auth_host_infos_to_kernel(struct auth_host_info *host_infos, uint16_t nc_host)
+{
+	int i = 0, ret = UGW_SUCCESS;
+
+	struct auth_ioc_arg *ioc_obj = create_ioc_obj(BYPASS_HOST_INFO, nc_host);
+	if (ioc_obj == NULL) {
+		AUTH_ERROR("No mem.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}	
+	if (nc_host != 0)
+	{
+		for (i = 0; host_infos && i < nc_host; i++) {
+			if (set_auth_host_info(ioc_obj, i, host_infos[i].host) == UGW_FAILED) {
+				ret = UGW_FAILED;
+				goto OUT;
+			}
+		}
+	}
+#if DEBUG_ENABLE
+	display_host_info_ioc_obj(ioc_obj);
+#endif
+	if (ioctl(s_dev_fd, SIOCSAUTHHOSTS, ioc_obj) != 0) {
+		AUTH_ERROR("ioctl of set auth host_infos failed.\n");
 		ret = UGW_FAILED;
 		goto OUT;
 	}
@@ -1758,6 +1913,10 @@ static int auth_config_to_kernel(struct auth_global_config *config)
 
 	if (config->update_user) {
 		update_user_stat_to_kernel(config->users, config->nc_user);
+	}
+
+	if (config->update_host_infos) {
+		update_auth_host_infos_to_kernel(config->host_infos, config->nc_host);
 	}
 
 	if (config->get_all_user) {
