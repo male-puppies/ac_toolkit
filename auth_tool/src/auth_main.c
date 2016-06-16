@@ -1833,7 +1833,7 @@ static void print_user_info(struct user_stat_assist *assist, struct user_info *u
 	for (i = 0; i < assist->nc_user; i++) {
 		printf("ip:");
 		PRINT_IPV4(users[i].ipv4);
-		printf(" st:%u jf:%llu mac:%02x:%02x:%02x:%02x:%02x:%02x type:%u\n", 
+		printf(" st:%u jf:%lu mac:%02x:%02x:%02x:%02x:%02x:%02x type:%u\n", 
 				users[i].status, users[i].jf,
 				users[i].mac[0], users[i].mac[1], users[i].mac[2],
 				users[i].mac[3], users[i].mac[4], users[i].mac[5], 
