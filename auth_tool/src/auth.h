@@ -29,6 +29,7 @@
 #define SIOCSAUTHURLS       0X105   /*set bypass url*/
 #define SIOCSDEBUGOPTIONS	0x106	/*set debug options*/
 #define SIOCSAUTHHOSTS 		0x107 	/*set bypass host*/
+#define SIOCSAUTHMAC		0x108	/*set bypass mac*/
 
 #define ETH_ALEN				6
 
@@ -112,6 +113,13 @@ struct auth_options
 	char		*redirect_title;
 	uint32_t    bypass_enable;
 };
+#pragma pack(4)
+struct mac_info {
+	uint32_t status;
+	unsigned char mac[ETH_ALEN];
+};
+
+#pragma pack()
 
 #pragma pack(4)
 struct user_info {
@@ -144,7 +152,11 @@ struct auth_global_config {
 	struct user_info *users;
 	uint32_t nc_user;
 	uint8_t update_user;
-
+	
+	struct mac_info *host_mac;
+	uint32_t nc_mac;
+	uint8_t update_host_mac;
+	
 	struct auth_host_info *host_infos;
 	uint32_t nc_host;
 	uint8_t update_host_infos;
@@ -210,6 +222,7 @@ enum ARG_TYPE_E {
 	NET_IF_INFO	= 4,
 	BYPASS_URL_INFO = 5,
 	BYPASS_HOST_INFO = 6,
+	BYPASS_HOST_MAC = 7,
 	/*add new type here*/
 	INVALID_ARG_TYPE,
 };
@@ -274,7 +287,6 @@ struct ioc_auth_host_info {
 	uint8_t 		host_len;
 	unsigned char 	host[BYPASS_HOST_LEN];
 };
-
 
 /*ioctl cmd args*/
 struct auth_ioc_arg {

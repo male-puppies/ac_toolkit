@@ -354,6 +354,69 @@ fail:
 	return -1;
 }
 
+static void auth_mac_cleanup(struct mac_info *host_mac)
+{
+	if (host_mac) {
+		memset(host_mac, 0, sizeof(struct mac_info));
+	}
+}
+
+static int auth_mac_init(struct mac_info *host_mac, const nx_json *js)
+{
+	char *mac_str = NULL;
+	uint32_t integer = 0;
+	memset(host_mac, 0, sizeof(struct mac_info));
+	if (auth_json_string_map(&mac_str,
+			nx_json_get(js, "mac"),
+			"config.MacBypassInfo[n].mac",
+			MAC_STR_SIZE) != 0) 
+	{
+		goto fail;
+	}
+
+	if (convert_addrstr_to_byte(mac_str, host_mac->mac) == NULL)
+	{
+		goto fail;
+	}
+
+	if (auth_json_integer_map(&integer, 
+		nx_json_get(js, "action"),  
+		"config.MAcBypassInfo[n].action",
+		0, 1) != 0)
+	{
+		goto fail;
+	}
+	host_mac->status= integer;
+	
+	if (mac_str) 
+	{
+		free(mac_str);
+	}
+	return 0;
+
+fail:
+	if (mac_str) 
+	{
+		free(mac_str);
+	}
+	auth_mac_cleanup(host_mac);
+	return -1;
+}
+
+
+
+static int do_auth_mac_parsing(struct mac_info **host_mac,uint32_t  *nc_mac,const nx_json *js)
+{
+	if (auth_json_array_map(host_mac, nc_mac,js,"config.MacBypassInfo",AUTH_USER_COUNT_MAX,
+			struct mac_info, auth_mac_init, auth_mac_cleanup) != 0)
+	{
+		goto fail;	
+		
+	}
+	return 0;
+fail:
+	return -1;
+}
 
 /***************************************ip_rule_parsing**************************************/
 static void auth_interface_cleanup(struct auth_if_info *if_info)
@@ -758,7 +821,18 @@ static int do_auth_config_parsing(struct auth_global_config *config, const nx_js
 			goto fail;
 		}
 	}
+	/*parse macinfo*/
+	js_elem = nx_json_get(js,"MacBypassInfo");
+	if(js_elem->type != NX_JSON_NULL){
+		if(do_auth_mac_parsing(&config->host_mac, &config->nc_mac, js_elem) == UGW_SUCCESS){
+			config->update_host_mac = 1;
+		}
+		else {
+			goto fail;
+		}
 
+
+	}
 
 	js_elem = nx_json_get(js, "BypassUrl");
 	if (js_elem->type != NX_JSON_NULL) {
@@ -865,6 +939,15 @@ static void auth_user_status_dump(struct user_info *user)
 	AUTH_INFO("~~~~~~~~~ AUTH USER STATUS END~~~~~~~~~\n\n");
 }
 
+static void auth_host_mac_dump(struct mac_info *host_mac)
+{
+	AUTH_INFO("~~~~~~~~~ AUTH USER MAC BEGIN~~~~~~~~~\n");
+ 	AUTH_INFO("Mac:%02X:%02X:%02X:%02X:%02X:%02X.\n", 
+				host_mac->mac[0],  host_mac->mac[1],  host_mac->mac[2],
+				host_mac->mac[3],  host_mac->mac[4],  host_mac->mac[5]);
+	AUTH_INFO("Action: %d.\n", host_mac->status);
+	AUTH_INFO("~~~~~~~~~ AUTH USER MAC END~~~~~~~~~\n\n");
+}
 
 static void auth_config_dump(struct auth_global_config *config)
 {
@@ -900,6 +983,11 @@ static void auth_config_dump(struct auth_global_config *config)
 		}
 	}
 
+	if (config->update_host_mac) {
+		for (i = 0; i < config->nc_mac; i++){
+			auth_host_mac_dump(&config->host_mac[i]);
+			}
+		}
 	if (config->update_user) {
 		for (i = 0; i < config->nc_user; i++) {
 			auth_user_status_dump(&config->users[i]);
@@ -1006,6 +1094,22 @@ static void auth_config_free(struct auth_global_config *auth_config)
 		free(auth_config->auth_opt.redirect_url);
 		auth_config->auth_opt.redirect_url = NULL;
 	}
+	if (auth_config->host_infos) {
+		free(auth_config->host_infos);
+		auth_config->host_infos = NULL;
+	}
+
+	if (auth_config->host_mac) {
+		free(auth_config->host_mac);
+		auth_config->host_mac = NULL;
+	}
+
+	if (auth_config->url_infos) {
+		free(auth_config->url_infos);
+		auth_config->url_infos = NULL;
+	}
+	
+
 }
 
 
@@ -1018,6 +1122,12 @@ static void auth_config_clear(struct auth_global_config *auth_config)
 	auth_config->ip_rules = NULL;
 	auth_config->if_infos = NULL;
 	auth_config->users = NULL;
+	auth_config->host_mac = NULL;
+	auth_config->host_infos = NULL;
+	auth_config->users = NULL;
+	auth_config->auth_opt.redirect_title = NULL;
+	auth_config->auth_opt.redirect_url = NULL;
+	auth_config->url_infos = NULL;
 }
 
 
@@ -1077,11 +1187,16 @@ static int32_t ioc_obj_pars_check(enum ARG_TYPE_E arg_type, uint16_t *real_nc)
 			ret = UGW_SUCCESS;
 			break;
 
+		case BYPASS_HOST_MAC:
+			ret = UGW_SUCCESS;
+			break;
+			
 		default:
 			ret = UGW_FAILED;
 			break;
 	}
 	return ret;
+	
 }
 
 
@@ -1093,7 +1208,7 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 	real_nc = nc_element;
 	if (ioc_obj_pars_check(arg_type, &real_nc) == UGW_FAILED)
 	{
-		AUTH_ERROR("arg_type(%d)  is invalid.", arg_type);
+		AUTH_ERROR("..arg_type(%d)  is invalid.", arg_type);
 		return NULL;
 	}
 	header_len = sizeof(struct auth_ioc_arg);
@@ -1133,6 +1248,9 @@ struct auth_ioc_arg *create_ioc_obj(enum ARG_TYPE_E arg_type, uint16_t nc_elemen
 			unit_len = sizeof(struct ioc_auth_host_info);
 			break;
 
+		case BYPASS_HOST_MAC:
+			unit_len = sizeof(struct mac_info);
+			break;
 		default:
 			unit_len = 0;
 			break;
@@ -1534,7 +1652,94 @@ OUT:
 	return ret;
 }
 
+static void display_auth_mac_ioc_obj(struct auth_ioc_arg *ioc_obj)
+{
+	assert(ioc_obj);
+	int i = 0;
+	struct mac_info *host_mac = 
+		(struct mac_info*)((void*)ioc_obj + sizeof(struct auth_ioc_arg));
+	
+	AUTH_DEBUG("*************AUTH_MAC IOC_OBJ***************\n");
+	AUTH_DEBUG("IOC_TYPE:%d\n", ioc_obj->type);
+	AUTH_DEBUG("IOC_NUM:%d\n", ioc_obj->num);
+	AUTH_DEBUG("DATA_LEN:%d\n", ioc_obj->data_len);
+	for (i = 0; i < ioc_obj->num; i++) {
+		 AUTH_INFO("MacBypassInfo:%02X:%02X:%02X:%02X:%02X:%02X.\n", 
+				host_mac[i].mac[0],  host_mac[i].mac[1],  host_mac[i].mac[2],
+				host_mac[i].mac[3],  host_mac[i].mac[4],  host_mac[i].mac[5]);
+		AUTH_INFO("Action: %d.\n", host_mac[i].status);
+	}
+	AUTH_DEBUG("***********************************************\n\n");
+}
 
+
+
+static int user_set_mac_valid_check(uint32_t status, const unsigned char *mac)
+
+{
+	return UGW_SUCCESS;
+
+}
+
+int set_auth_host_mac(struct auth_ioc_arg *arg, uint16_t obj_id, uint32_t status, const unsigned char *mac)
+{
+	assert(arg);
+	struct mac_info *host_mac= NULL;
+
+	if (user_set_mac_valid_check(status, mac) == UGW_FAILED) {
+		return UGW_FAILED;
+	}
+	if (obj_id >= arg->num) {
+		AUTH_ERROR("OBJ_ID(%u) >= OBJ_COUNT(%u) out of range.\n");
+		return UGW_FAILED;
+	}
+	host_mac = (struct mac_info*)((void*)arg + sizeof(struct auth_ioc_arg));
+	host_mac[obj_id].status = status;
+	memcpy(host_mac[obj_id].mac, mac, ETH_ALEN);
+	return UGW_SUCCESS;
+}
+
+int update_auth_host_mac_to_kernel(struct mac_info *host_mac,uint16_t nc_mac)
+{
+	
+	int i = 0, ret = UGW_SUCCESS;
+	
+	struct auth_ioc_arg *ioc_obj = create_ioc_obj(BYPASS_HOST_MAC, nc_mac);
+	if (ioc_obj == NULL) {
+		AUTH_ERROR("No mem.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}	
+	if (nc_mac != 0)
+	{
+		for (i = 0; host_mac && i < nc_mac; i++) {
+			if (set_auth_host_mac(ioc_obj, i, host_mac[i].status, host_mac[i].mac) == UGW_FAILED) {
+				ret = UGW_FAILED;
+				goto OUT;
+			}
+		}
+	}
+#if DEBUG_ENABLE
+	display_auth_mac_ioc_obj(ioc_obj);
+#endif
+		
+	if (ioctl(s_dev_fd, SIOCSAUTHMAC, ioc_obj) != 0) {
+		AUTH_ERROR("ioctl of set auth url_infos failed.\n");
+		ret = UGW_FAILED;
+		goto OUT;
+	}
+
+
+OUT:
+	if (ioc_obj) {
+		free_ioc_obj(ioc_obj);
+		ioc_obj = NULL;
+	}
+	return ret;
+
+	
+	
+}
 static void display_host_info_ioc_obj(struct auth_ioc_arg *ioc_obj)
 {
 	assert(ioc_obj);
@@ -1910,7 +2115,9 @@ static int auth_config_to_kernel(struct auth_global_config *config)
 	if (config->update_url_infos) {
 		update_auth_url_infos_to_kernel(config->url_infos, config->nc_url);
 	}
-
+	if (config->update_host_mac) {
+		update_auth_host_mac_to_kernel(config->host_mac,config->nc_mac);
+	}
 	if (config->update_user) {
 		update_user_stat_to_kernel(config->users, config->nc_user);
 	}
